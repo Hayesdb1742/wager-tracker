@@ -1,0 +1,419 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+type Week = { id: number; week_number: number; status: string; required_picks: number; season_id: number; season_year: number };
+type Game = {
+  id: string; week_id: number; sport: string; home_team: string; away_team: string;
+  kickoff_time: string; status: string; winner: string | null; in_pool: boolean; external_id: string;
+  home_score: number | null; away_score: number | null; last_synced_at: string | null; manual_resolved: boolean;
+};
+
+// Pool weeks are calendar-aligned: pool week N holds CFB week N and NFL week
+// N-1 (they share a weekend). Upstream APIs fold CFB "week 0" into week 1, so
+// pool weeks 0/1 sync CFB week 1 split by a Sep 1 kickoff cutoff.
+const LAST_CFB_POOL_WEEK = 12;
+
+function scheduleSyncParams(sport: "CFB" | "NFL", week: Week) {
+  const year = week.season_year;
+  if (sport === "NFL") {
+    const nflWeek = week.week_number - 1;
+    return nflWeek >= 1 ? { year, nflWeek } : null;
+  }
+  if (week.week_number > LAST_CFB_POOL_WEEK) return null;
+  const cutoff = `${year}-09-01`;
+  if (week.week_number === 0) return { year, cfbWeek: 1, before: cutoff };
+  if (week.week_number === 1) return { year, cfbWeek: 1, after: cutoff };
+  return { year, cfbWeek: week.week_number };
+}
+
+interface Props {
+  weeks: Week[];
+  currentWeek: Week | null;
+  games: Game[];
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  SCHEDULED: "bg-gray-100 text-gray-600",
+  LIVE: "bg-blue-100 text-blue-700",
+  FINAL: "bg-green-100 text-green-700",
+  POSTPONED: "bg-amber-100 text-amber-700",
+  CANCELLED: "bg-red-100 text-red-600",
+};
+
+export function ResultsClient({ weeks, currentWeek, games: initialGames }: Props) {
+  const router = useRouter();
+  // Server data stays the source of truth (router.refresh() re-renders with
+  // fresh props); optimistic edits are layered on top per game.
+  const [overrides, setOverrides] = useState<Record<string, Partial<Game>>>({});
+  const games = initialGames.map((g) => (overrides[g.id] ? { ...g, ...overrides[g.id] } : g));
+  const [syncing, setSyncing] = useState<"CFB" | "NFL" | "RESULTS" | null>(null);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [confirmOverride, setConfirmOverride] = useState<{ gameId: string; winner: string } | null>(null);
+  const [excludeConfirm, setExcludeConfirm] = useState<{ gameId: string; count: number } | null>(null);
+  const [statusModal, setStatusModal] = useState<{ gameId: string; action: "POSTPONED" | "CANCELLED" } | null>(null);
+
+  function updateGame(id: string, patch: Partial<Game>) {
+    setOverrides((o) => ({ ...o, [id]: { ...o[id], ...patch } }));
+  }
+
+  async function handleSync(sport: "CFB" | "NFL") {
+    if (!currentWeek) return;
+    const params = scheduleSyncParams(sport, currentWeek);
+    if (!params) return;
+    setSyncing(sport);
+    setSyncResult(null);
+    const res = await fetch("/api/admin/sync-schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekId: currentWeek.id, sport, ...params }),
+    });
+    const data = await res.json();
+    setSyncing(null);
+    setSyncResult(
+      res.ok
+        ? `${sport}: ${data.upserted ?? 0} games synced${data.skipped_manual ? `, ${data.skipped_manual} manual kept` : ""}`
+        : `${sport} sync failed: ${data.error}`
+    );
+    if (res.ok) router.refresh();
+  }
+
+  async function handleSyncResults() {
+    if (!currentWeek) return;
+    setSyncing("RESULTS");
+    setSyncResult(null);
+    const res = await fetch("/api/admin/sync-results", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekId: currentWeek.id }),
+    });
+    const data = await res.json();
+    setSyncing(null);
+    const summary = data.results?.[currentWeek.id];
+    setSyncResult(
+      summary && !summary.error
+        ? `Results: ${summary.resolved} resolved, ${summary.skipped_manual} manual kept, ${summary.touched} checked${summary.errors?.length ? `, ${summary.errors.length} errors` : ""}`
+        : `Results sync failed: ${summary?.error ?? data.error ?? "unknown error"}`
+    );
+    if (res.ok) router.refresh();
+  }
+
+  async function handleResult(gameId: string, winner: string, force = false) {
+    if (!force) {
+      const game = games.find((g) => g.id === gameId);
+      if (game?.status === "FINAL") {
+        setConfirmOverride({ gameId, winner });
+        return;
+      }
+    }
+    setConfirmOverride(null);
+    const res = await fetch(`/api/admin/games/${gameId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ winner, force }),
+    });
+    if (!res.ok) { alert((await res.json()).error); return; }
+    updateGame(gameId, { status: "FINAL", winner, manual_resolved: true });
+  }
+
+  async function handlePoolToggle(gameId: string, inPool: boolean, force = false) {
+    if (!inPool && !force) {
+      const res = await fetch(`/api/admin/games/${gameId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ in_pool: false }),
+      });
+      const data = await res.json();
+      if (!res.ok && data.error === "picks_exist") {
+        setExcludeConfirm({ gameId, count: data.count });
+        return;
+      }
+      if (!res.ok) { alert(data.error); return; }
+      updateGame(gameId, { in_pool: false });
+      return;
+    }
+    setExcludeConfirm(null);
+    const res = await fetch(`/api/admin/games/${gameId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ in_pool: inPool, force }),
+    });
+    if (!res.ok) { alert((await res.json()).error); return; }
+    updateGame(gameId, { in_pool: inPool });
+  }
+
+  async function handleResetToApi(gameId: string) {
+    const res = await fetch(`/api/admin/games/${gameId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ manual_resolved: false }),
+    });
+    if (!res.ok) { alert((await res.json()).error); return; }
+    updateGame(gameId, { manual_resolved: false });
+  }
+
+  async function handleStatusChange(gameId: string, status: "POSTPONED" | "CANCELLED") {
+    setStatusModal(null);
+    const res = await fetch(`/api/admin/games/${gameId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) { alert((await res.json()).error); return; }
+    updateGame(gameId, { status });
+  }
+
+  const cfbGames = games.filter((g) => g.sport === "CFB");
+  const nflGames = games.filter((g) => g.sport === "NFL");
+  const lastSynced = games.reduce<string | null>(
+    (max, g) => (g.last_synced_at && (!max || g.last_synced_at > max) ? g.last_synced_at : max),
+    null
+  );
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold">Results</h1>
+        <select
+          className="border rounded-lg px-3 py-2 text-sm"
+          value={currentWeek?.id ?? ""}
+          onChange={(e) => router.push(`/admin/results?week=${e.target.value}`)}
+        >
+          {weeks.map((w) => (
+            <option key={w.id} value={w.id}>{w.season_year} Week {w.week_number} — {w.status}</option>
+          ))}
+        </select>
+      </div>
+
+      {!currentWeek && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+          No weeks found. Create a week in the Weeks section first.
+        </div>
+      )}
+
+      {currentWeek && (
+        <>
+          {/* Sync controls */}
+          <div className="bg-white border rounded-xl p-4 mb-6 flex items-center gap-4 flex-wrap">
+            <span className="text-sm font-medium text-gray-700">Sync schedule:</span>
+            <button
+              onClick={() => handleSync("CFB")}
+              disabled={syncing !== null || !scheduleSyncParams("CFB", currentWeek)}
+              title={!scheduleSyncParams("CFB", currentWeek) ? "No CFB this pool week" : undefined}
+              className="text-sm border rounded-lg px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {syncing === "CFB" ? "Syncing CFB…" : "Sync CFB"}
+            </button>
+            <button
+              onClick={() => handleSync("NFL")}
+              disabled={syncing !== null || !scheduleSyncParams("NFL", currentWeek)}
+              title={!scheduleSyncParams("NFL", currentWeek) ? "No NFL this pool week" : undefined}
+              className="text-sm border rounded-lg px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {syncing === "NFL" ? "Syncing NFL…" : "Sync NFL"}
+            </button>
+            <button
+              onClick={handleSyncResults}
+              disabled={syncing !== null || games.length === 0}
+              title={games.length === 0 ? "Sync the schedule first" : undefined}
+              className="text-sm border border-blue-300 text-blue-700 rounded-lg px-3 py-1.5 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {syncing === "RESULTS" ? "Syncing results…" : "Sync Results"}
+            </button>
+            {syncResult && <span className="text-sm text-gray-500">{syncResult}</span>}
+            {lastSynced && (
+              <span className="text-xs text-gray-400 ml-auto">
+                Last synced {new Date(lastSynced).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
+          </div>
+
+          {games.length === 0 && (
+            <div className="bg-white border rounded-xl p-8 text-center text-gray-400 text-sm">
+              No games yet. Click &ldquo;Sync CFB&rdquo; or &ldquo;Sync NFL&rdquo; to pull this week&apos;s schedule.
+            </div>
+          )}
+
+          {[{ label: "NFL", list: nflGames }, { label: "CFB", list: cfbGames }].map(({ label, list }) =>
+            list.length === 0 ? null : (
+              <div key={label} className="mb-6">
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">{label}</h2>
+                <div className="bg-white border rounded-xl divide-y">
+                  {list.map((game) => (
+                    <GameRow
+                      key={game.id}
+                      game={game}
+                      onResult={handleResult}
+                      onPoolToggle={handlePoolToggle}
+                      onStatusChange={(id, action) => setStatusModal({ gameId: id, action })}
+                      onResetToApi={handleResetToApi}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+        </>
+      )}
+
+      {/* Confirm result correction */}
+      {confirmOverride && (
+        <Modal title="Correct result?" onClose={() => setConfirmOverride(null)}>
+          <p className="text-sm text-gray-600 mb-4">
+            This game is already FINAL. Changing the result will trigger a full scoring recalculation for all affected members.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => handleResult(confirmOverride.gameId, confirmOverride.winner, true)}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700">
+              Update result
+            </button>
+            <button onClick={() => setConfirmOverride(null)} className="text-sm text-gray-600 hover:underline">Cancel</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirm exclude with picks */}
+      {excludeConfirm && (
+        <Modal title="Exclude game?" onClose={() => setExcludeConfirm(null)}>
+          <p className="text-sm text-gray-600 mb-4">
+            {excludeConfirm.count} member{excludeConfirm.count !== 1 ? "s have" : " has"} already picked this game. Those picks will be orphaned and treated as forfeits.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => handlePoolToggle(excludeConfirm.gameId, false, true)}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700">
+              Exclude anyway
+            </button>
+            <button onClick={() => setExcludeConfirm(null)} className="text-sm text-gray-600 hover:underline">Cancel</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Status change confirmation */}
+      {statusModal && (
+        <Modal title={`Mark as ${statusModal.action.toLowerCase()}?`} onClose={() => setStatusModal(null)}>
+          <p className="text-sm text-gray-600 mb-4">
+            {statusModal.action === "POSTPONED"
+              ? "Picks on this game will be unfrozen and members can edit them again."
+              : "All picks on this game will receive 0 points and it will be excluded from the required pick count."}
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => handleStatusChange(statusModal.gameId, statusModal.action)}
+              className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-700">
+              Confirm
+            </button>
+            <button onClick={() => setStatusModal(null)} className="text-sm text-gray-600 hover:underline">Cancel</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function GameRow({ game, onResult, onPoolToggle, onStatusChange, onResetToApi }: {
+  game: Game;
+  onResult: (id: string, winner: string) => void;
+  onPoolToggle: (id: string, inPool: boolean) => void;
+  onStatusChange: (id: string, action: "POSTPONED" | "CANCELLED") => void;
+  onResetToApi: (id: string) => void;
+}) {
+  const locked = new Date(game.kickoff_time) <= new Date();
+  const hasScore = game.home_score !== null && game.away_score !== null;
+
+  return (
+    <div className={`px-4 py-3 flex items-center gap-4 text-sm flex-wrap ${!game.in_pool ? "opacity-50" : ""}`}>
+      <div className="flex-1 min-w-[200px]">
+        <span className="font-medium">{game.away_team}</span>
+        {hasScore && <span className="font-semibold tabular-nums ml-1.5">{game.away_score}</span>}
+        <span className="text-gray-400 mx-2">@</span>
+        <span className="font-medium">{game.home_team}</span>
+        {hasScore && <span className="font-semibold tabular-nums ml-1.5">{game.home_score}</span>}
+        <span className="text-xs text-gray-400 ml-2">
+          {new Date(game.kickoff_time).toLocaleDateString()} {new Date(game.kickoff_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {locked && <span className="ml-1 text-amber-600">• Locked</span>}
+        </span>
+        {game.last_synced_at && (
+          <span className="block text-xs text-gray-300">
+            synced {new Date(game.last_synced_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+          </span>
+        )}
+      </div>
+
+      <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[game.status] ?? "bg-gray-100 text-gray-600"}`}>
+        {game.status}{game.winner ? ` — ${game.winner}` : ""}
+      </span>
+
+      {game.manual_resolved && (
+        <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+          Manually resolved
+          <button
+            onClick={() => onResetToApi(game.id)}
+            title="Let API results sync manage this game again"
+            className="ml-1.5 underline hover:text-purple-900"
+          >
+            reset to API
+          </button>
+        </span>
+      )}
+
+      {/* Result buttons */}
+      {game.status !== "CANCELLED" && (
+        <div className="flex gap-1">
+          {(["HOME", "AWAY", "PUSH"] as const).map((w) => (
+            <button
+              key={w}
+              onClick={() => onResult(game.id, w)}
+              className={`text-xs px-2 py-1 rounded border transition-colors ${
+                game.winner === w
+                  ? "bg-green-600 text-white border-green-600"
+                  : "hover:bg-gray-50 text-gray-600"
+              }`}
+            >
+              {w === "HOME" ? game.home_team.split(" ").pop() : w === "AWAY" ? game.away_team.split(" ").pop() : "Push"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Pool + status controls */}
+      <div className="flex gap-1">
+        {game.in_pool ? (
+          <button onClick={() => onPoolToggle(game.id, false)}
+            className="text-xs text-gray-500 hover:text-red-600 border rounded px-2 py-1">
+            Exclude
+          </button>
+        ) : (
+          <button onClick={() => onPoolToggle(game.id, true)}
+            disabled={locked}
+            className="text-xs text-gray-500 hover:text-blue-600 border rounded px-2 py-1 disabled:opacity-40">
+            Include
+          </button>
+        )}
+        {game.status === "SCHEDULED" && (
+          <>
+            <button onClick={() => onStatusChange(game.id, "POSTPONED")}
+              className="text-xs text-gray-500 hover:text-amber-600 border rounded px-2 py-1">PPD</button>
+            <button onClick={() => onStatusChange(game.id, "CANCELLED")}
+              className="text-xs text-gray-500 hover:text-red-600 border rounded px-2 py-1">CXL</button>
+          </>
+        )}
+        {game.status === "POSTPONED" && (
+          <button onClick={() => onStatusChange(game.id, "SCHEDULED" as never)}
+            className="text-xs text-gray-500 hover:text-blue-600 border rounded px-2 py-1">Reschedule</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
+        <h2 className="font-semibold text-lg mb-3">{title}</h2>
+        {children}
+      </div>
+    </div>
+  );
+}

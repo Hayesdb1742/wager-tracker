@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Week 0 Picks — CFB Mockup</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f9fafb; color: #111827; }
+  .page { max-width: 672px; margin: 0 auto; padding: 32px 16px; }
+
+  /* Header */
+  .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
+  .header-left h1 { font-size: 24px; font-weight: 700; }
+  .header-left p { font-size: 13px; color: #6b7280; margin-top: 2px; }
+  .header-right { text-align: right; }
+  .pick-count { font-size: 24px; font-weight: 700; color: #374151; font-variant-numeric: tabular-nums; }
+  .pick-count.good { color: #16a34a; }
+  .pick-count-label { font-size: 11px; color: #9ca3af; }
+  .lotw-status { font-size: 11px; color: #d97706; margin-top: 4px; }
+  .lotw-status.set { color: #16a34a; }
+
+  /* Warning banner */
+  .warning { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 13px; color: #92400e; }
+
+  /* Section label */
+  .section-label { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+
+  /* Game cards */
+  .games { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
+  .card-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .card-time { font-size: 12px; color: #9ca3af; }
+  .badge { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; }
+  .badge-locked { background: #f3f4f6; color: #6b7280; }
+  .badge-intl { background: #eff6ff; color: #2563eb; }
+  .lotw-btn { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; border: 1px solid #fcd34d; color: #d97706; cursor: pointer; background: transparent; }
+  .lotw-btn.active { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+
+  .teams { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .team-btn { padding: 12px 16px; border-radius: 8px; border: 2px solid #e5e7eb; text-align: left; cursor: pointer; background: transparent; transition: all 0.1s; }
+  .team-btn:hover { border-color: #93c5fd; background: #eff6ff; }
+  .team-btn.selected { border-color: #3b82f6; background: #eff6ff; }
+  .team-btn.locked { border-color: #f3f4f6; background: #f9fafb; cursor: default; }
+  .team-side { font-size: 11px; color: #9ca3af; margin-bottom: 2px; }
+  .team-name { font-size: 13px; font-weight: 500; color: #374151; }
+  .team-btn.selected .team-name { color: #1d4ed8; }
+  .team-btn.locked .team-name { color: #9ca3af; }
+  .team-pick-label { font-size: 11px; color: #3b82f6; margin-top: 2px; }
+  .team-pick-label.lotw { color: #d97706; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Week 0 Picks</h1>
+      <p>Closes Sat, Aug 24 · 2:30 PM ET</p>
+    </div>
+    <div class="header-right">
+      <div class="pick-count">3 / 5</div>
+      <div class="pick-count-label">picks made</div>
+      <div class="lotw-status set">🔒 LOTW set</div>
+    </div>
+  </div>
+
+  <!-- Warning -->
+  <div class="warning">
+    You need 2 more picks to avoid forfeit penalties.
+  </div>
+
+  <!-- College Football section -->
+  <div class="section-label">College Football</div>
+  <div class="games">
+
+    <!-- Game 1 — Florida vs Miami (Dublin) — LOCKED -->
+    <div class="card" style="opacity:0.8">
+      <div class="card-meta">
+        <div class="card-time">Sat, Aug 24 · 2:30 PM ET</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="badge badge-intl">🇮🇪 Dublin</span>
+          <span class="badge badge-locked">Locked</span>
+        </div>
+      </div>
+      <div class="teams">
+        <button class="team-btn locked">
+          <div class="team-side">Away</div>
+          <div class="team-name">Miami Hurricanes</div>
+        </button>
+        <button class="team-btn selected locked">
+          <div class="team-side">Home</div>
+          <div class="team-name">Florida Gators</div>
+          <div class="team-pick-label">✓ Your pick</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Game 2 — Georgia Tech vs Florida State — LOCKED, LOTW -->
+    <div class="card" style="opacity:0.8">
+      <div class="card-meta">
+        <div class="card-time">Sat, Aug 24 · 7:00 PM ET</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="badge badge-locked">Locked</span>
+        </div>
+      </div>
+      <div class="teams">
+        <button class="team-btn selected locked">
+          <div class="team-side">Away</div>
+          <div class="team-name">Florida State</div>
+          <div class="team-pick-label lotw">✓ Your pick · 🔒 LOTW</div>
+        </button>
+        <button class="team-btn locked">
+          <div class="team-side">Home</div>
+          <div class="team-name">Georgia Tech</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Game 3 — UNLV vs Hawai'i — open -->
+    <div class="card">
+      <div class="card-meta">
+        <div class="card-time">Sat, Aug 24 · 10:00 PM ET</div>
+        <button class="lotw-btn">Set as LOTW</button>
+      </div>
+      <div class="teams">
+        <button class="team-btn">
+          <div class="team-side">Away</div>
+          <div class="team-name">UNLV Rebels</div>
+        </button>
+        <button class="team-btn selected">
+          <div class="team-side">Home</div>
+          <div class="team-name">Hawai'i Warriors</div>
+          <div class="team-pick-label">✓ Your pick</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Game 4 — Western Kentucky vs Austin Peay — open, no pick -->
+    <div class="card">
+      <div class="card-meta">
+        <div class="card-time">Thu, Aug 22 · 7:30 PM ET</div>
+        <button class="lotw-btn">Set as LOTW</button>
+      </div>
+      <div class="teams">
+        <button class="team-btn">
+          <div class="team-side">Away</div>
+          <div class="team-name">Austin Peay</div>
+        </button>
+        <button class="team-btn">
+          <div class="team-side">Home</div>
+          <div class="team-name">WKU Hilltoppers</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Game 5 — Nevada vs UC Davis — open, no pick -->
+    <div class="card">
+      <div class="card-meta">
+        <div class="card-time">Sat, Aug 24 · 9:30 PM ET</div>
+        <button class="lotw-btn">Set as LOTW</button>
+      </div>
+      <div class="teams">
+        <button class="team-btn">
+          <div class="team-side">Away</div>
+          <div class="team-name">UC Davis Aggies</div>
+        </button>
+        <button class="team-btn">
+          <div class="team-side">Home</div>
+          <div class="team-name">Nevada Wolf Pack</div>
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /games -->
+
+</div><!-- /page -->
+</body>
+</html>
