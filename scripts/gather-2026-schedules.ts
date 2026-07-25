@@ -17,6 +17,10 @@ import { fetchCfbWeek, fetchNflWeek } from "../src/lib/sports/providers";
 import { upsertScheduleGames } from "../src/lib/sports/sync";
 
 const YEAR = 2026;
+// A year can hold several competitions (the regular-season pool and the NFL
+// preseason test run are both 2026), so the season is keyed by year *and*
+// name -- matching the UNIQUE (year, name) constraint on public.seasons.
+const SEASON_NAME = `${YEAR} Season`;
 const CFB_WEEK0_CUTOFF = "2026-09-01";
 const LAST_CFB_WEEK = 12;
 const LAST_POOL_WEEK = 18; // NFL week 17
@@ -42,11 +46,12 @@ async function main() {
     .from("seasons")
     .select("id, name")
     .eq("year", YEAR)
+    .eq("name", SEASON_NAME)
     .maybeSingle();
   if (!season) {
     const { data, error } = await admin
       .from("seasons")
-      .insert({ year: YEAR, name: `${YEAR} Season` })
+      .insert({ year: YEAR, name: SEASON_NAME })
       .select("id, name")
       .single();
     if (error) throw new Error(`season insert: ${error.message}`);

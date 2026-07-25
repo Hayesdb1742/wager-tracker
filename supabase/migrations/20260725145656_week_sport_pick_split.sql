@@ -42,7 +42,11 @@ do $$
 declare
   v_season_id int;
 begin
-  select id into v_season_id from public.seasons where year = 2026;
+  -- Keyed by name as well as year: a year can hold several competitions
+  -- (the "2026 NFL Preseason" test run shares year 2026), and a non-STRICT
+  -- SELECT INTO would otherwise pick an arbitrary one of them.
+  select id into v_season_id
+    from public.seasons where year = 2026 and name = '2026 Season';
   if v_season_id is null then
     raise notice 'no 2026 season found, skipping backfill';
     return;

@@ -105,7 +105,19 @@ export function WeeksClient({ seasons, currentSeason, weeks: initialWeeks }: Pro
         <div>
           <h1 className="text-2xl font-bold">Weeks</h1>
           {currentSeason && (
-            <p className="text-gray-500 text-sm mt-1">{currentSeason.name}</p>
+            seasons.length > 1 ? (
+              <select
+                value={currentSeason.id}
+                onChange={(e) => router.push(`/weeks?season=${e.target.value}`)}
+                className="text-gray-500 text-sm mt-1 bg-transparent border border-gray-200 rounded px-2 py-1"
+              >
+                {seasons.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-gray-500 text-sm mt-1">{currentSeason.name}</p>
+            )
           )}
         </div>
         <button
