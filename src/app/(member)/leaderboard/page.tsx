@@ -1,14 +1,20 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getActiveSeasonId } from "@/lib/seasons";
 import { LeaderboardClient } from "./LeaderboardClient";
 
 export default async function LeaderboardPage() {
   const admin = createAdminClient();
 
-  // All weeks for the season dropdown
-  const { data: weeks } = await admin
-    .from("weeks")
-    .select("id, week_number, status, season_id")
-    .order("week_number", { ascending: true });
+  // Weeks of the active season, for the week dropdown
+  const seasonId = await getActiveSeasonId(admin);
+
+  const { data: weeks } = seasonId
+    ? await admin
+        .from("weeks")
+        .select("id, week_number, status, season_id")
+        .eq("season_id", seasonId)
+        .order("week_number", { ascending: true })
+    : { data: [] };
 
   // Default to the open week; fall back to most recently closed
   const openWeek = weeks?.find((w) => w.status === "OPEN");

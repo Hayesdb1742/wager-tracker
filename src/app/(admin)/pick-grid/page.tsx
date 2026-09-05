@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getActiveSeasonId } from "@/lib/seasons";
 import { PicksAdminClient } from "./PicksAdminClient";
 
 export default async function AdminPicksPage({
@@ -9,11 +10,16 @@ export default async function AdminPicksPage({
   const { week: weekParam } = await searchParams;
   const admin = createAdminClient();
 
-  // All weeks for the selector
-  const { data: weeks } = await admin
-    .from("weeks")
-    .select("id, week_number, status, required_picks")
-    .order("week_number", { ascending: true });
+  // Weeks of the active season, for the selector
+  const seasonId = await getActiveSeasonId(admin);
+
+  const { data: weeks } = seasonId
+    ? await admin
+        .from("weeks")
+        .select("id, week_number, status, required_picks")
+        .eq("season_id", seasonId)
+        .order("week_number", { ascending: true })
+    : { data: [] };
 
   // Default: open week, then most recent closed
   const defaultWeek =

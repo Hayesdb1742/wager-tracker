@@ -15,11 +15,12 @@ export default async function WeeksPage() {
 
   const { data: seasons } = await admin
     .from("seasons")
-    .select("id, name, year")
+    .select("id, name, year, is_active")
     .order("year", { ascending: false });
 
-  const currentYear = new Date().getFullYear();
-  const currentSeason = seasons?.find((s) => s.year === currentYear) ?? seasons?.[0];
+  // The flagged season, not a year match — two 2026 seasons exist (regular and
+  // preseason), so year alone doesn't identify the live one.
+  const currentSeason = seasons?.find((s) => s.is_active) ?? seasons?.[0];
 
   const { data: weeks } = await admin
     .from("weeks")

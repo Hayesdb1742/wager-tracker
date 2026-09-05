@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getActiveSeasonId } from "@/lib/seasons";
 import { PicksClient } from "./PicksClient";
 import { redirect } from "next/navigation";
 
@@ -10,14 +11,19 @@ export default async function PicksPage() {
 
   const admin = createAdminClient();
 
-  // Find the current open week
-  const { data: week } = await admin
-    .from("weeks")
-    .select("*")
-    .eq("status", "OPEN")
-    .order("week_number", { ascending: false })
-    .limit(1)
-    .single();
+  // Find the current open week within the active season
+  const seasonId = await getActiveSeasonId(admin);
+
+  const { data: week } = seasonId
+    ? await admin
+        .from("weeks")
+        .select("*")
+        .eq("season_id", seasonId)
+        .eq("status", "OPEN")
+        .order("week_number", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
 
   if (!week) {
     return (

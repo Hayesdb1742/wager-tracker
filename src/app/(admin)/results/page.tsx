@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getActiveSeasonId } from "@/lib/seasons";
 import { ResultsClient } from "./ResultsClient";
 import { redirect } from "next/navigation";
 
@@ -26,9 +27,14 @@ export default async function ResultsPage({ searchParams }: Props) {
     season_year: seasons.year,
   }));
 
+  // The selector still spans every season; only the default is scoped, so a
+  // stale season's OPEN week can't become the landing week.
+  const seasonId = await getActiveSeasonId(admin);
+  const seasonWeeks = weeks.filter((w) => w.season_id === seasonId);
+
   const activeWeekId = weekParam
     ? Number(weekParam)
-    : (weeks.find((w) => w.status === "OPEN") ?? weeks[0])?.id ?? null;
+    : (seasonWeeks.find((w) => w.status === "OPEN") ?? seasonWeeks[0] ?? weeks[0])?.id ?? null;
 
   const { data: games } = activeWeekId
     ? await admin

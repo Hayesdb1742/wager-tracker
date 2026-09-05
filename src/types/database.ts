@@ -302,18 +302,21 @@ export type Database = {
         Row: {
           created_at: string
           id: number
+          is_active: boolean
           name: string
           year: number
         }
         Insert: {
           created_at?: string
           id?: number
+          is_active?: boolean
           name: string
           year: number
         }
         Update: {
           created_at?: string
           id?: number
+          is_active?: boolean
           name?: string
           year?: number
         }
