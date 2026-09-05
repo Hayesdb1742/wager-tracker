@@ -80,15 +80,15 @@ Severity reflects blast radius × likelihood, not effort to fix.
 | [F4](#f4-team-identity-is-unnormalized-free-text-the-teams-table-is-dead) | Team identity is free text; `teams` dead | 🟠 High | Open |
 | [F5](#f5-historical_picks-is-a-disconnected-island-with-a-second-scoring-vocabulary) | `historical_picks` disconnected island | 🟠 High | Open |
 | [F6](#f6-forfeit-penalties-ignore-the-cfbnfl-split) | Forfeits ignore CFB/NFL split | 🟠 High | Open |
-| [F7](#f7-there-is-no-current-week--its-inferred-and-nothing-makes-it-unique) | No "current week"; inferred, not unique | 🟠 High | Open |
+| [F7](#f7-there-is-no-current-week--its-inferred-and-nothing-makes-it-unique) | No "current week"; inferred, not unique | 🟠 High | Partial |
 | [F8](#f8-weekly_scores-is-an-uninvalidated-cache) | `weekly_scores` cache never invalidated | 🟡 Medium | Open |
 | [F9](#f9-realtime-leaderboard-is-silently-dead) | Realtime leaderboard silently dead | 🟡 Medium | Open |
 | [F10](#f10-eight-unindexed-foreign-keys) | Eight unindexed foreign keys | 🟡 Medium | Open |
 | [F11](#f11-rls-policy-hygiene-62-advisor-warnings) | RLS policy hygiene (62 warnings) | 🟡 Medium | Open |
 | [F12](#f12-two-competing-audit-mechanisms-for-pick-overrides) | Two competing override audit trails | 🟡 Medium | Open |
 | [F13](#f13-picksupdated_at-is-never-maintained) | `picks.updated_at` never maintained | 🟡 Medium | Open |
-| [F14](#f14-migration-drift) | Migration drift | 🟢 Low | Open |
-| [F15](#f15-test-residue-in-production) | Test-season residue in production | 🟢 Low | Open |
+| [F14](#f14-migration-drift) | Migration drift | 🟢 Low | **Resolved 2026-09-04** |
+| [F15](#f15-test-residue-in-production) | Test-season residue in production | 🟢 Low | Partial |
 | [F16](#f16-invites-lacks-a-unique-email-and-a-link-to-the-resulting-profile) | `invites` lacks unique email / profile link | 🟢 Low | Open |
 | [F17](#f17-weekly_scores-penalty-columns-are-unconstrained) | Penalty columns unconstrained | 🟢 Low | Open |
 | [F18](#f18-known-data-gaps-persist) | Known schedule/data gaps | 🟢 Low | Open |
@@ -222,6 +222,14 @@ special-case history everywhere.
 Also: 6 distinct `display_name` values in history vs 8 profiles — either two current members
 have no 2024 record, or two 2024 names were never mapped.
 
+> **Name question answered 2026-09-04.** It was the former. The roster was rebuilt that day
+> (9 synthetic seed profiles deleted, 8 real members created), and all 648 historical picks
+> now carry a populated `member_id`, matched on `display_name`. Griffin and Andrew are the
+> two members with no 2024 record — they are new to the pool, not unmapped names.
+>
+> The structural finding stands: `season_year` / `week_number` are still loose ints with no
+> FK, and the two scoring vocabularies still have no bridging view.
+
 #### F6. Forfeit penalties ignore the CFB/NFL split
 
 `close_week` computes `v_forfeit := greatest(0, v_required_picks - v_pick_count) * -1` using
@@ -253,6 +261,18 @@ create unique index weeks_one_open_per_season on weeks (season_id) where status 
 
 Add `seasons.is_current boolean` with a partial unique index rather than inferring the
 season from an open week.
+
+> **Partially resolved 2026-09-04** (`82f7557`). The season half landed — as
+> `seasons.is_active` rather than `is_current`, with partial unique index
+> `seasons_one_active_idx` allowing at most one active season. `getActiveSeasonId()`
+> (`src/lib/seasons.ts`) is now the shared accessor and all five call sites scope through it,
+> so current-week resolution is deterministic and cannot cross season boundaries. This was
+> not theoretical: the 2026 NFL Preseason week was the only OPEN week in the database and was
+> being served on `/picks` in place of the live season.
+>
+> The `weeks.status` half is untouched. It is still a two-value domain conflating three
+> states, there is still no one-open-week constraint, and `close_week` will still penalise a
+> league for a week that has not kicked off.
 
 ---
 
@@ -321,11 +341,29 @@ The database has `20260725173415_seasons_allow_multiple_per_year` applied;
 migrations produces a different schema than production. Fix before the next migration —
 drift compounds.
 
+> **Resolved 2026-09-04** (`bd3e712`). The missing file did not need reconstructing: Supabase
+> retains the executed SQL in `supabase_migrations.schema_migrations.statements`, so it was
+> recovered verbatim, original comments included. Use that source if drift recurs.
+>
+> A second, self-inflicted drift surfaced during the fix — `apply_migration` assigns its own
+> timestamp, so a locally-authored filename will not match the recorded version unless it is
+> renamed afterward. Local files and `list_migrations` now agree on all seven versions.
+> W1.4 (a drift check in the workflow) remains open, so nothing prevents a recurrence.
+
 #### F15. Test residue in production
 
 Season 1 ("2025 Season", 5 weeks, 16 games, 10 already FINAL) and season 4
 ("2026 NFL Preseason") are indistinguishable from real seasons to every query in the app —
 `analytics/page.tsx:33` lists all seasons unfiltered.
+
+> **Partially mitigated 2026-09-04.** `seasons.is_active` now distinguishes the live season,
+> and the week-resolution paths respect it, so a stale season can no longer supply the current
+> week. The 86 picks and 40 `weekly_scores` rows belonging to season 1's seed members were
+> deleted with those profiles.
+>
+> The seasons themselves still exist and `analytics/page.tsx:33` still lists all of them
+> unfiltered, so they remain visible in member-facing analytics. Whether to delete or filter
+> is still open — see the W13.1 decision.
 
 #### F16. `invites` lacks a unique email and a link to the resulting profile
 
@@ -378,8 +416,13 @@ inconsistency that will trip a join eventually.
 
 **Then**
 
-8. F5, F8, F9 and the remaining medium tier. **F14** first among them, since drift makes
-   every subsequent migration riskier.
+8. F5, F8, F9 and the remaining medium tier. ~~**F14** first among them, since drift makes
+   every subsequent migration riskier.~~ — F14 resolved 2026-09-04.
+
+> **Status note, 2026-09-04.** Items 1 (F1) and 6 (F2) were reviewed by Hayes and
+> **accepted as known risk for now** on a private ~8-person league. They stay documented and
+> unresolved by choice; do not re-open them as urgent each session. Revisit if the app moves
+> to a public deployment, which changes the exposure of the anon key materially.
 
 ---
 
@@ -403,3 +446,4 @@ Remediation work items derived from these findings live in
 | Date | Reviewer | Scope | Notes |
 |---|---|---|---|
 | 2026-09-04 | Claude (data architect review) | Full `public` schema, RLS, functions, advisors, data quality | Initial review. 19 findings, 2 critical. |
+| 2026-09-04 | Claude (go-live session) | F5, F7, F14, F15 | Status pass after week 1 go-live. F14 resolved; F7 and F15 partial; F5's roster question answered. F1 and F2 accepted as known and deferred by Hayes — not to be re-raised as blocking. |

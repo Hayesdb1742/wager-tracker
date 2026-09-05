@@ -16,38 +16,57 @@ up without re-deriving context.
 
 | Wave | Theme | Items | Constraint |
 |---|---|---|---|
-| 0 | Prerequisite | W1 | Blocks all other migrations |
+| 0 | Prerequisite | ~~W1~~ ✅ | Cleared 2026-09-04 — no longer blocking |
 | 1 | Urgent — before week 1 closes | W2, W3, W4 | Deadline **2026-09-08** |
-| 2 | Structural — while `picks` is empty | W5, W6, W7, W8 | Cost rises once picks land |
+| 2 | Structural — while `picks` is empty | W5, W6, W7 (partial), W8 | Cost rises once picks land |
 | 3 | Correctness & hygiene | W9–W13 | No hard deadline |
+
+> **Progress note, 2026-09-04 (go-live day).** W1 is done, W7.3/W7.5 and W12.2 landed, and
+> pool week 1 opened for real. **W2 and W8 are deliberately deferred** — Hayes reviewed F1
+> and F2 and accepted them as known risk on a private ~8-person league. They are not to be
+> re-raised as urgent; revisit if this deploys publicly.
+>
+> That leaves **W3 and W4 as the live Wave 1 items** against the 2026-09-08 deadline, both of
+> which need Hayes' input (see the Decision Register). `picks` is still empty, so the Wave 2
+> window is open but closing — members can submit as soon as they log in.
 
 ---
 
 ## Wave 0 — Prerequisite
 
-### W1. Reconcile migration drift
+### W1. Reconcile migration drift ✅
 
 **Finding:** F14 · **Size:** S · **Blocks:** every other item in this backlog
+**Status: done 2026-09-04** (`bd3e712`), except 1.4. Wave 0 no longer blocks.
 
 The database has six applied migrations; `supabase/migrations/` contains five files. The
 applied-but-unversioned one is `20260725173415_seasons_allow_multiple_per_year`. Any rebuild
 from migrations produces a schema that differs from production, and every migration written
 after this point inherits the divergence.
 
-- [ ] 1.1 List applied migrations (`mcp__supabase__list_migrations`) and diff against
+- [x] 1.1 List applied migrations (`mcp__supabase__list_migrations`) and diff against
       `/bin/ls supabase/migrations/`
-- [ ] 1.2 Reconstruct the missing migration's DDL from live state. It relates to the
-      `seasons` unique constraint — production currently has
-      `seasons_year_name_key UNIQUE (year, name)`, which permits multiple seasons per year
-      (e.g. "2026 Season" and "2026 NFL Preseason" both exist). Confirm with
-      `pg_get_constraintdef` before writing.
-- [ ] 1.3 Write `supabase/migrations/20260725173415_seasons_allow_multiple_per_year.sql` to
-      match, idempotently (`drop constraint if exists` / `add constraint`)
+- [x] 1.2 ~~Reconstruct the missing migration's DDL from live state.~~ **Not needed —
+      recovered verbatim.** Supabase retains the executed SQL in
+      `supabase_migrations.schema_migrations.statements`; querying that column returned the
+      original file including its comments. Always try this before reconstructing by hand.
+- [x] 1.3 Write `supabase/migrations/20260725173415_seasons_allow_multiple_per_year.sql` to
+      match — written verbatim from the recovered statement rather than idempotently, since
+      it is a faithful copy of what actually ran
 - [ ] 1.4 Add a `supabase db diff` (or equivalent) check to the workflow so drift is caught
-      at the point it is introduced
+      at the point it is introduced — **still open**, and the one thing that would have
+      caught the drift below
 
-**Acceptance:** applied-migration list and `supabase/migrations/` contents match exactly;
-a fresh `supabase db reset` reproduces production's `public` schema.
+> **Gotcha found while doing this.** `mcp__supabase__apply_migration` assigns its own
+> timestamp, which will not match a locally-authored filename. The `active_season_flag`
+> migration was written as `20260904235500_*` but recorded remotely as `20260905002358_*`,
+> creating fresh drift within the same session as the fix. The local file was renamed to
+> match. Whatever lands for 1.4 should catch filename-vs-version mismatch, not just
+> missing files.
+
+**Acceptance:** ✅ applied-migration list and `supabase/migrations/` contents match exactly
+(seven versions, verified 2026-09-04); a fresh `supabase db reset` reproduces production's
+`public` schema.
 
 ---
 
@@ -211,6 +230,8 @@ FK rather than string equality; zero unmatched names in the backfill report.
 ### W7. Give `weeks.status` three states and enforce one open week
 
 **Finding:** F7 · **Size:** M · **Depends on:** W1
+**Status: partial.** 7.3 and 7.5 landed 2026-09-04; the `weeks.status` domain work
+(7.1, 7.2, 7.4, 7.6, 7.7) is untouched and remains the substance of this item.
 
 `status` is `OPEN|CLOSED`, but three states are in use: weeks 2–18 of season 3 are `CLOSED`
 meaning *"hasn't happened yet"* while week 0 is `CLOSED` meaning *"finished and scored"*.
@@ -223,15 +244,21 @@ penalised for games that have not kicked off. Separately, nothing constrains the
       `UPCOMING`. Season 3 weeks 2–18 all become `UPCOMING`; week 0 becomes `SCORED`.
 - [ ] 7.2 Add `create unique index weeks_one_open_per_season on weeks (season_id)
       where status = 'OPEN';`
-- [ ] 7.3 Add `seasons.is_current boolean` + partial unique index, and stop inferring the
-      current season from whichever week happens to be open
+- [x] 7.3 ~~Add `seasons.is_current boolean`~~ **Done 2026-09-04** (`82f7557`) as
+      `seasons.is_active`, with partial unique index `seasons_one_active_idx`. Season 3
+      flagged. Note the name differs from what this item specified.
 - [ ] 7.4 Update every call site that compares against the old values —
       `(member)/picks/page.tsx:17`, `(member)/leaderboard/page.tsx:14`,
       `(member)/leaderboard/LeaderboardClient.tsx:174,178`,
       `(admin)/pick-grid/page.tsx:20`, `(admin)/results/page.tsx:31`,
       `(admin)/weeks/WeeksClient.tsx:99,289,298`, `api/admin/weeks/[id]/reopen/route.ts:21`
-- [ ] 7.5 Replace `weeks.find(w => w.status === 'OPEN')` with a lookup scoped to the current
-      season, so the result is deterministic rather than dependent on array order
+- [x] 7.5 ~~Replace `weeks.find(w => w.status === 'OPEN')` with a lookup scoped to the
+      current season~~ **Done 2026-09-04** (`82f7557`). `getActiveSeasonId()` in
+      `src/lib/seasons.ts` is the shared accessor; all five call sites scope through it.
+      The admin weeks page also had a related bug — it identified the season by matching
+      `seasons.year` against the calendar year, which is ambiguous because "2026 Season" and
+      "2026 NFL Preseason" share year 2026. Verified by planting a stale OPEN week with a
+      higher `week_number` in an inactive season; `/picks` continued to serve pool week 1.
 - [ ] 7.6 Guard `close_week` against being run on an `UPCOMING` week
 - [ ] 7.7 Regenerate `src/types/database.ts`
 
@@ -357,8 +384,11 @@ every analytics page special-cases history.
 - [ ] 12.1 Add real FKs: `historical_picks.season_id → seasons.id`, and `week_id → weeks.id`
       where a matching week exists. Season 2 ("2024 Season") is a 14-week stub with zero
       games — decide whether to populate its schedule or leave history week-linked only.
-- [ ] 12.2 Reconcile the 6 distinct `display_name` values against 8 profiles; document who
-      is unmapped and why (two members with no 2024 record, or two unmapped names)
+- [x] 12.2 ~~Reconcile the 6 distinct `display_name` values against 8 profiles~~
+      **Done 2026-09-04.** The roster was rebuilt that day — 9 synthetic seed profiles
+      deleted, 8 real members created — and all 648 historical picks now carry a populated
+      `member_id`, matched on `display_name`. Nobody is unmapped: Griffin and Andrew are
+      new to the pool and simply have no 2024 record.
 - [ ] 12.3 Create a bridging view exposing both eras in one shape, so analytics pages stop
       special-casing. Honour the W3 decision: if the eras are not comparable, the view must
       carry an era discriminator rather than flattening them.
@@ -381,6 +411,10 @@ Independent small items; can be picked up individually.
       10 FINAL) and season 4 ("2026 NFL Preseason") are indistinguishable from real seasons
       to `analytics/page.tsx:33`, which lists all seasons unfiltered. Delete them, or add a
       flag and filter. Confirm with Hayes before deleting — season 4 may be intentional.
+      **Partial 2026-09-04:** the flag half exists — `seasons.is_active` marks season 3 and
+      week resolution respects it, so a stale season can no longer supply the current week.
+      Season 1's seed picks and `weekly_scores` were deleted with the seed profiles. Still
+      to do: filter `analytics/page.tsx:33`, and decide delete-vs-retain.
 - [ ] 13.2 (F16) `invites`: add a unique constraint on `email` (`citext` or a functional
       unique index on `lower(email)`), and a link from invite to the profile it produced
 - [ ] 13.3 (F17) Constrain the penalty columns:
@@ -406,7 +440,7 @@ Items needing Hayes' input before implementation. Record answers here as they la
 
 | Item | Question | Status |
 |---|---|---|
-| W3.1 | Straight-up or against-the-spread for 2026 onward? | Open |
-| W4.2 | What is the forfeit penalty for a per-sport shortfall? | Open |
-| W8.1 | RLS-enforced reads, or server-authz with policies deleted? | Open |
-| W13.1 | Delete the 2025 test season and 2026 preseason, or flag and filter? | Open |
+| W3.1 | Straight-up or against-the-spread for 2026 onward? | Open — **due 2026-09-08** |
+| W4.2 | What is the forfeit penalty for a per-sport shortfall? | Open — moot for week 1 (CFB-only, no split) |
+| W8.1 | RLS-enforced reads, or server-authz with policies deleted? | **Deferred 2026-09-05** — F1/F2 accepted as known risk |
+| W13.1 | Delete the 2025 test season and 2026 preseason, or flag and filter? | Partly answered — flagged via `is_active`; delete-vs-retain still open |
