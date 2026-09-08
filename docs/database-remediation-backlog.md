@@ -17,7 +17,7 @@ up without re-deriving context.
 | Wave | Theme | Items | Constraint |
 |---|---|---|---|
 | 0 | Prerequisite | ~~W1~~ ✅ | Cleared 2026-09-04 — no longer blocking |
-| 1 | Urgent — before week 1 closes | ~~W2~~ (deferred), ~~W3~~ ✅, W4 | Deadline **2026-09-08** |
+| 1 | Urgent — before week 1 closes | ~~W2~~ (deferred), ~~W3~~ ✅, ~~W4~~ ⏸️ tabled | Deadline passed — nothing live |
 | 2 | Structural — while `picks` is empty | W5, W6, W7 (partial), W8 | Cost rises once picks land |
 | 3 | Correctness & hygiene | W9–W13 | No hard deadline |
 
@@ -36,6 +36,13 @@ up without re-deriving context.
 > migration ran, so it was a column add rather than a data migration. That window has now
 > closed for practical purposes: week 2 is the first week members can enter wagers.
 > **W4 (per-sport forfeits) is the last open Wave 1 item** and Hayes is taking it separately.
+>
+> **Update, later on 2026-09-08.** **Week 1 closed and week 2 opened.** Week 1 was closed
+> with a direct `UPDATE`, deliberately **not** `close_week(21)` — it had zero picks by
+> design as a functional test, and the RPC would have booked -5 forfeit + -1 LOTW against
+> all 8 members for a week nobody was asked to play. Week 2 (`weeks.id = 22`, 102 games,
+> 5 CFB + 4 NFL) is now the single open week. **W4 is tabled** at Hayes' direction, so Wave
+> 1 has no live items; see the exposure note under W4.
 
 ---
 
@@ -182,9 +189,19 @@ surface was never in fact mixing them — it does not read `historical_picks` at
 
 ---
 
-### W4. Make forfeit penalties split-aware
+### W4. Make forfeit penalties split-aware ⏸️
 
 **Finding:** F6 · **Size:** M · **Depends on:** W1
+**Status: tabled 2026-09-08** by Hayes, to be picked up later. It is no longer a Wave 1
+deadline item.
+
+> **What tabling costs.** Week 2 opened 2026-09-08 as a **5 CFB + 4 NFL** week — the first
+> split week the league has actually played, and 16 of 19 weeks in this season carry a
+> split. Until this lands, `close_week` reads `required_picks` alone, so a member who
+> submits 9 CFB picks and no NFL picks incurs **no penalty at all**. The exposure is real
+> from week 2 onward but it is not silent damage: `weekly_scores` is still empty, and
+> forfeits are only computed at week close. So the deadline that matters is **the first time
+> a split week is closed**, not the first time one opens. Decide 4.2 before then.
 
 `close_week` computes forfeits from `required_picks` alone:
 `v_forfeit := greatest(0, v_required_picks - v_pick_count) * -1`. Migration
@@ -202,8 +219,8 @@ no penalty. 16 of 19 weeks in season 3 carry a split, so this is the normal case
 - [ ] 4.3 Add the pick-entry–side guard: `POST /api/picks` should reject or warn when a
       submission violates the split, so members are not silently accruing penalties
 - [ ] 4.4 Backfill check — no weeks have been scored under the split yet
-      (`weekly_scores` is empty), so no historical correction is needed. Confirm before
-      assuming.
+      (`weekly_scores` is empty, re-confirmed 2026-09-08), so no historical correction is
+      needed. Re-confirm before assuming; this stops being true once any week is closed.
 
 **Acceptance:** a member with 9 CFB picks in a 5 CFB + 4 NFL week receives the agreed
 non-zero penalty; a member with 5 CFB + 4 NFL receives zero; NULL-split weeks behave exactly
