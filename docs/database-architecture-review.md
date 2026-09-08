@@ -76,7 +76,7 @@ Severity reflects blast radius × likelihood, not effort to fix.
 |---|---|---|---|
 | [F1](#f1-scoring-functions-are-world-writable-via-the-rest-api) | Scoring RPCs world-writable via REST | 🔴 Critical | Open |
 | [F2](#f2-rls-is-decorative--the-whole-app-runs-as-service_role) | RLS decorative; app runs as `service_role` | 🔴 Critical | Open |
-| [F3](#f3-live-scoring-model-diverges-from-league-history-cutting-off-reconciliation) | Scoring model diverges from history (by design) | 🟠 High | Decision |
+| [F3](#f3-live-scoring-model-diverges-from-league-history-cutting-off-reconciliation) | Scoring model diverges from history (by design) | 🟠 High | **Resolved 2026-09-08** |
 | [F4](#f4-team-identity-is-unnormalized-free-text-the-teams-table-is-dead) | Team identity is free text; `teams` dead | 🟠 High | Open |
 | [F5](#f5-historical_picks-is-a-disconnected-island-with-a-second-scoring-vocabulary) | `historical_picks` disconnected island | 🟠 High | Open |
 | [F6](#f6-forfeit-penalties-ignore-the-cfbnfl-split) | Forfeits ignore CFB/NFL split | 🟠 High | Open |
@@ -162,9 +162,25 @@ service-role-everywhere and delete the policies so nobody is lulled by them.
 The most consequential structural divergence, and it is live: pool week 1 (`weeks.id = 21`)
 opened 2026-08-29.
 
-Of 648 historical picks, 292 carry a point spread (`"Texans +3.5"`, `"GT -5.5"`, `"OKLA 3"`),
+Of 648 historical picks, 292 carry a *signed* point spread (`"Texans +3.5"`, `"GT -5.5"`),
 26 are moneylines (`"Jets ML"`), one is a total (`"O 36.5 cheifs"`). This league bets
 **against the spread**.
+
+> **Correction, 2026-09-08.** Two of those counts were wrong, and the second was wrong by
+> enough to change the conclusion. Re-parsing all 648 rows (totals must be matched *before*
+> spreads, or `"Chiefs Raider U45.5"` falls through to the spread branch):
+>
+> | Shape | Real count | Stated above |
+> |---|---:|---:|
+> | Spreads — 292 signed **plus 138 unsigned** (`"Bears 1.5"`, `"Bama 7"`) | **430** | 292 |
+> | Totals — 81 with a number, 8 without | **89** | 1 |
+> | Moneylines | 26 | 26 |
+> | LOTW placeholder — `bet_text` is the literal string `LOTW`, no bet detail | 84 | — |
+> | Team-only, undecidable | 19 | — |
+>
+> Totals are the **third-largest shape in league history**, not a one-off. The original
+> count of 1 understated them by ~89×, which materially understated the case for
+> first-class over/under support.
 
 The live model has no spread. `games` has `home_team, away_team, home_score, away_score,
 winner` and nothing else — no `spread`, no `line`, no `total`. A case-insensitive grep for
@@ -192,9 +208,33 @@ alter table games
   add column spread_source text;
 ```
 
-plus a `PUSH` path in `resolve_game` when the margin equals the spread. **Confirm the choice
-before week 1 closes (2026-09-08)** — after picks land, the second option becomes a data
-migration.
+plus a `PUSH` path in `resolve_game` when the margin equals the spread.
+
+> **Resolved 2026-09-08 — option (b), and wider than proposed.** Hayes ruled that all three
+> bet types the history contains are valid: `ML`, `SPREAD` and `TOTAL`. The line is **not**
+> a column on `games` as sketched above — it lives on the pick and is **entered by the
+> member**, because the league bets across different books at different times and two
+> members may hold different numbers on the same game.
+>
+> Shipped in `supabase/migrations/20260908195803_wager_types.sql`: `picks` gains `bet_type`,
+> `line` and `odds` (all `not null` bar the price, with **no defaults** — possible only
+> because `picks` was still empty), `picked_team` is renamed to `selection` and widened to
+> `HOME|AWAY|OVER|UNDER`, and a new `grade_pick()` grades every wager against its own line.
+> `resolve_game` is now score-driven — `(game_id, home_score, away_score)` — because a
+> spread cannot be graded from "HOME won".
+>
+> Specs: `openspec/changes/wager-types/`. The -120 price rule is captured but **not
+> enforced**; `odds` is only range-checked as a plausible American price.
+>
+> Consequence 1 above is **narrower than stated**: `analytics/page.tsx` reads `picks` and
+> `weekly_scores` only, and `historical_picks` is read by **no page at all** (it appears in
+> `src/types/database.ts` and nowhere else). The two eras are not currently being summed in
+> one column — the risk is latent, not live.
+>
+> Consequence 2 is **unblocked in principle but still gated**: there is now somewhere to put
+> a spread or a total, but 84 LOTW rows carry no bet detail whatsoever, 19 are undecidable,
+> 138 unsigned spreads have no recoverable side, `teams` is empty (F4), and the database
+> holds **no 2024 games** to reconcile against. See W12.4.
 
 #### F4. Team identity is unnormalized free text; the `teams` table is dead
 
@@ -447,3 +487,4 @@ Remediation work items derived from these findings live in
 |---|---|---|---|
 | 2026-09-04 | Claude (data architect review) | Full `public` schema, RLS, functions, advisors, data quality | Initial review. 19 findings, 2 critical. |
 | 2026-09-04 | Claude (go-live session) | F5, F7, F14, F15 | Status pass after week 1 go-live. F14 resolved; F7 and F15 partial; F5's roster question answered. F1 and F2 accepted as known and deferred by Hayes — not to be re-raised as blocking. |
+| 2026-09-08 | Claude (wager-types session) | F3, F4, F10 | **F3 resolved** — all three bet types shipped with member-entered lines (`openspec/changes/wager-types/`, migration `20260908195803`). **F3's bet-shape counts were wrong and are corrected here: 89 totals, not 1; 430 spreads, not 292.** Two of F10's eight indexes landed with it. F4 is now the binding constraint on `bet_text` reconciliation, not F3. |

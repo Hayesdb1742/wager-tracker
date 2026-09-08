@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { validateWager } from "@/lib/wagers";
 
 // POST /api/admin/picks/override
-// Body: { member_id, game_id, week_id, picked_team, force? }
+// Body: { member_id, game_id, week_id, bet_type, selection, line, odds?, force? }
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -12,10 +13,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { member_id, game_id, week_id, picked_team, force } = await request.json();
+  const { member_id, game_id, week_id, bet_type, selection, line, odds, force } =
+    await request.json();
 
-  if (!["HOME", "AWAY"].includes(picked_team)) {
-    return NextResponse.json({ error: "picked_team must be HOME or AWAY" }, { status: 400 });
+  const invalid = validateWager({ bet_type, selection, line, odds });
+  if (invalid) {
+    return NextResponse.json({ error: invalid }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -23,7 +26,7 @@ export async function POST(request: NextRequest) {
   // Check if game is FINAL — require force to override
   const { data: game } = await admin
     .from("games")
-    .select("status, winner")
+    .select("status, home_score, away_score")
     .eq("id", game_id)
     .single();
 
@@ -34,7 +37,7 @@ export async function POST(request: NextRequest) {
   // Look up existing pick
   const { data: existing } = await admin
     .from("picks")
-    .select("id, picked_team")
+    .select("id, bet_type, selection, line, odds")
     .eq("member_id", member_id)
     .eq("game_id", game_id)
     .maybeSingle();
@@ -44,7 +47,10 @@ export async function POST(request: NextRequest) {
     const { error: updateErr } = await admin
       .from("picks")
       .update({
-        picked_team,
+        bet_type,
+        selection,
+        line,
+        odds: odds ?? null,
         overridden_by: user.id,
         overridden_at: new Date().toISOString(),
       })
@@ -52,11 +58,18 @@ export async function POST(request: NextRequest) {
 
     if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
 
-    // Audit log
+    // Audit log — the whole wager, since a line or price can change without the
+    // selection moving at all.
     await admin.from("pick_audit_log").insert({
       pick_id: existing.id,
-      previous_team: existing.picked_team,
-      new_team: picked_team,
+      previous_bet_type: existing.bet_type,
+      previous_selection: existing.selection,
+      previous_line: existing.line,
+      previous_odds: existing.odds,
+      new_bet_type: bet_type,
+      new_selection: selection,
+      new_line: line,
+      new_odds: odds ?? null,
       changed_by: user.id,
     });
   } else {
@@ -67,7 +80,10 @@ export async function POST(request: NextRequest) {
         member_id,
         game_id,
         week_id,
-        picked_team,
+        bet_type,
+        selection,
+        line,
+        odds: odds ?? null,
         overridden_by: user.id,
         overridden_at: new Date().toISOString(),
       });
@@ -75,9 +91,14 @@ export async function POST(request: NextRequest) {
     if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
-  // Recalculate scores if game is already FINAL
-  if (game?.status === "FINAL" && game.winner) {
-    await admin.rpc("resolve_game", { p_game_id: game_id, p_winner: game.winner });
+  // Re-grade if the game is already FINAL. Only this member's wager can have changed, but
+  // resolve_game re-grades the whole game, which is correct and idempotent.
+  if (game?.status === "FINAL" && game.home_score !== null && game.away_score !== null) {
+    await admin.rpc("resolve_game", {
+      p_game_id: game_id,
+      p_home_score: game.home_score,
+      p_away_score: game.away_score,
+    });
   }
 
   return NextResponse.json({ success: true });

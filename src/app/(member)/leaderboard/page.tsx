@@ -43,7 +43,7 @@ export default async function LeaderboardPage() {
   const { data: picks } = defaultWeek
     ? await admin
         .from("picks")
-        .select("member_id, game_id, picked_team, is_lotw, points")
+        .select("member_id, game_id, bet_type, selection, line, odds, is_lotw, points")
         .eq("week_id", defaultWeek.id)
     : { data: [] };
 
@@ -91,7 +91,10 @@ export default async function LeaderboardPage() {
       initialPicks={(picks ?? []).map((p) => ({
         member_id: p.member_id,
         game_id: p.game_id,
-        picked_team: p.picked_team,
+        bet_type: p.bet_type,
+        selection: p.selection,
+        line: p.line,
+        odds: p.odds,
         is_lotw: p.is_lotw,
         points: p.points,
       }))}

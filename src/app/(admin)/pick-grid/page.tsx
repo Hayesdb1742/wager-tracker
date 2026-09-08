@@ -50,7 +50,7 @@ export default async function AdminPicksPage({
   const { data: picks } = selectedWeekId
     ? await admin
         .from("picks")
-        .select("id, member_id, game_id, picked_team, is_lotw, points, overridden_by, overridden_at")
+        .select("id, member_id, game_id, bet_type, selection, line, odds, is_lotw, points, overridden_by, overridden_at")
         .eq("week_id", selectedWeekId)
     : { data: [] };
 
@@ -60,7 +60,7 @@ export default async function AdminPicksPage({
     pickIds.length > 0
       ? await admin
           .from("pick_audit_log")
-          .select("id, pick_id, previous_team, new_team, changed_by, changed_at, profiles!changed_by(display_name)")
+          .select("id, pick_id, previous_bet_type, previous_selection, previous_line, new_bet_type, new_selection, new_line, changed_by, changed_at, profiles!changed_by(display_name)")
           .in("pick_id", pickIds)
           .order("changed_at", { ascending: false })
           .limit(50)
@@ -71,7 +71,10 @@ export default async function AdminPicksPage({
     id: string;
     member_id: string;
     game_id: string;
-    picked_team: string;
+    bet_type: string;
+    selection: string;
+    line: number;
+    odds: number | null;
     is_lotw: boolean;
     points: number | null;
     overridden_by: string | null;
@@ -93,8 +96,12 @@ export default async function AdminPicksPage({
       auditLog={(auditLog ?? []).map((a) => ({
         id: a.id,
         pick_id: a.pick_id,
-        previous_team: a.previous_team,
-        new_team: a.new_team,
+        previous_bet_type: a.previous_bet_type,
+        previous_selection: a.previous_selection,
+        previous_line: a.previous_line,
+        new_bet_type: a.new_bet_type,
+        new_selection: a.new_selection,
+        new_line: a.new_line,
         changed_by_name: a.profiles?.display_name ?? "Admin",
         changed_at: a.changed_at,
       }))}

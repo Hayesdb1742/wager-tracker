@@ -49,9 +49,21 @@ export default async function PicksPage() {
     .eq("member_id", user.id)
     .eq("week_id", week.id);
 
-  const pickMap: Record<string, { id: string; picked_team: string; is_lotw: boolean; overridden_by: string | null; overridden_at: string | null }> = {};
+  const pickMap: Record<string, {
+    id: string; bet_type: string; selection: string; line: number; odds: number | null;
+    is_lotw: boolean; overridden_by: string | null; overridden_at: string | null;
+  }> = {};
   for (const p of existingPicks ?? []) {
-    pickMap[p.game_id] = { id: p.id, picked_team: p.picked_team, is_lotw: p.is_lotw, overridden_by: p.overridden_by, overridden_at: p.overridden_at };
+    pickMap[p.game_id] = {
+      id: p.id,
+      bet_type: p.bet_type,
+      selection: p.selection,
+      line: p.line,
+      odds: p.odds,
+      is_lotw: p.is_lotw,
+      overridden_by: p.overridden_by,
+      overridden_at: p.overridden_at,
+    };
   }
 
   return (

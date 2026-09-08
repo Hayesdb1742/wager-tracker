@@ -17,7 +17,7 @@ up without re-deriving context.
 | Wave | Theme | Items | Constraint |
 |---|---|---|---|
 | 0 | Prerequisite | ~~W1~~ ✅ | Cleared 2026-09-04 — no longer blocking |
-| 1 | Urgent — before week 1 closes | W2, W3, W4 | Deadline **2026-09-08** |
+| 1 | Urgent — before week 1 closes | ~~W2~~ (deferred), ~~W3~~ ✅, W4 | Deadline **2026-09-08** |
 | 2 | Structural — while `picks` is empty | W5, W6, W7 (partial), W8 | Cost rises once picks land |
 | 3 | Correctness & hygiene | W9–W13 | No hard deadline |
 
@@ -29,6 +29,13 @@ up without re-deriving context.
 > That leaves **W3 and W4 as the live Wave 1 items** against the 2026-09-08 deadline, both of
 > which need Hayes' input (see the Decision Register). `picks` is still empty, so the Wave 2
 > window is open but closing — members can submit as soon as they log in.
+>
+> **Update, 2026-09-08 (deadline day).** **W3 is done** — see below; it shipped as all three
+> bet types with member-entered lines, and it took W5's two missing `picks` indexes with it.
+> `picks`, `pick_audit_log` and `weekly_scores` were **still at zero rows** when the
+> migration ran, so it was a column add rather than a data migration. That window has now
+> closed for practical purposes: week 2 is the first week members can enter wagers.
+> **W4 (per-sport forfeits) is the last open Wave 1 item** and Hayes is taking it separately.
 
 ---
 
@@ -115,35 +122,63 @@ where p.pronamespace = 'public'::regnamespace
 
 ---
 
-### W3. Confirm the scoring model: straight-up vs. against-the-spread
+### W3. Confirm the scoring model: straight-up vs. against-the-spread ✅
 
 **Finding:** F3 · **Size:** S to decide, L if ATS is chosen · **Type:** decision, not code
-
-This is a **decision item and needs Hayes' input** — do not resolve it by inference.
+**Status: done 2026-09-08** — decided **(b)**, and wider than the two options below.
 
 The spec deliberately chose straight-up picking (`proposal.md`: "select a team for each
 game", "+1 win / 0 push / -1 loss"; "spread" appears in no spec file). But 292 of 648
 historical picks carry a point spread and 26 are moneylines — the league bet ATS in 2024.
 Both facts are true; the gap between them was never written down.
 
-- [ ] 3.1 Put the choice to the league explicitly. Two viable paths:
+- [x] 3.1 Put the choice to the league explicitly. Two viable paths:
       - **(a) Accept the break.** Keep straight-up. Cheap, honest, no schema change.
         Requires W3.2.
         Consequence: 2024 and 2026 records are different metrics and must never be summed.
       - **(b) Model the spread.** Add `games.spread numeric(4,1)` + `spread_source text`,
         add a `PUSH` path to `resolve_game` when margin equals spread, source lines from an
         odds provider. Preserves continuity with league history; unblocks W12.
-- [ ] 3.2 If (a): label the eras distinctly wherever both are shown —
+- [x] 3.2 ~~If (a): label the eras distinctly~~ — **moot, (b) was chosen.** Also note the
+      premise was wrong: `historical_picks` is read by **no page**, so the eras were never
+      actually being summed in one column. See the note below.
+- [x] 3.2b (a) is not in play; the original text follows for the record —
       `(member)/analytics/page.tsx`, `(member)/stats/[memberId]/page.tsx`. All-time
       standings, win %, and LOTW records currently span both eras in one column, which
       misrepresents both.
-- [ ] 3.3 If (b): schedule before week 1 closes. Once picks land, this becomes a data
-      migration rather than a column add.
-- [ ] 3.4 Record the decision and its rationale in `design.md`, and update the F3 status row
-      in the review doc
+- [x] 3.3 If (b): schedule before week 1 closes. **Landed 2026-09-08 with `picks` still at
+      zero rows**, so it was a column add, not a data migration.
+- [x] 3.4 Record the decision and its rationale in `design.md`, and update the F3 status row
+      in the review doc — recorded in `openspec/changes/wager-types/design.md`; F3 marked
+      Resolved and its bet-shape counts corrected
 
-**Acceptance:** decision recorded in `design.md`; the analytics surface either labels the
-eras or scores them on one comparable basis.
+> **What shipped, 2026-09-08.** Not (a) or (b) as framed, but (b) widened: **all three bet
+> types the history contains** — `ML`, `SPREAD`, `TOTAL` — with the line **on the pick and
+> entered by the member**, not a provider-sourced column on `games`. Two members may hold
+> different numbers on the same game and be graded differently from one final score.
+>
+> `supabase/migrations/20260908195803_wager_types.sql`: `picks.picked_team` → `selection`
+> (widened to `HOME|AWAY|OVER|UNDER`), plus `bet_type`, `line`, `odds`, six CHECK
+> constraints, and the two missing indexes from W5. New `grade_pick()`; `resolve_game`
+> rewritten to `(game_id, home_score, away_score)` — a spread cannot be graded from "HOME
+> won", so the admin results screen now captures scores. Specs in
+> `openspec/changes/wager-types/`.
+>
+> **Correction to this item's premise.** F3 said the history held "one total". It holds
+> **89**. It also undercounted spreads at 292 by missing 138 unsigned rows (`"Bears 1.5"`);
+> the real figure is 430. Totals were the third-largest shape in league history and the
+> backlog was arguing about whether to support spreads while over/unders sat unnoticed in
+> the same column. Match totals *before* spreads when parsing, or `"Chiefs Raider U45.5"`
+> reads as a spread.
+>
+> **Deliberately not done:** the -120 price rule (`odds` is stored and range-checked as a
+> plausible American price, nothing more), and any verification of member-entered lines.
+> CFBD's `/lines` endpoint would supply spreads, totals and moneylines under the existing
+> `CFBD_API_KEY`, keyed by the `external_id` already on `games`, if that is ever wanted.
+
+**Acceptance:** ✅ decision recorded in `openspec/changes/wager-types/design.md`; the two
+eras are scored on a comparable basis from 2026 onward (both ATS-capable), and the analytics
+surface was never in fact mixing them — it does not read `historical_picks` at all.
 
 ---
 
@@ -190,7 +225,11 @@ as they do today.
 `invites.invited_by`. `games.week_id` matters immediately — 1,110 rows and every page filters
 by week.
 
-- [ ] 5.1 Single migration creating all eight indexes
+- [ ] 5.1 Single migration creating all eight indexes — **2 of 8 done 2026-09-08**:
+      `picks.game_id` and `picks.week_id` shipped with the W3 wager-types migration, since
+      grading now fans out per game. Six remain: `games.week_id` (the one that matters most),
+      `picks.overridden_by`, `weekly_scores.week_id`, `pick_audit_log.pick_id`,
+      `pick_audit_log.changed_by`, `invites.invited_by`.
 - [ ] 5.2 Drop `historical_picks_season_week_idx` if still unused, or note why it is retained
       (advisor reports it as never used)
 
@@ -392,9 +431,19 @@ every analytics page special-cases history.
 - [ ] 12.3 Create a bridging view exposing both eras in one shape, so analytics pages stop
       special-casing. Honour the W3 decision: if the eras are not comparable, the view must
       carry an era discriminator rather than flattening them.
-- [ ] 12.4 Parse `bet_text` into structured picks — **blocked on W3(b)**. If the league stays
-      straight-up, spread bets cannot be reconciled to `games` and this stays permanently out
-      of scope; say so explicitly and close the item.
+- [ ] 12.4 Parse `bet_text` into structured picks — **W3 no longer blocks this** (2026-09-08:
+      (b) shipped, so `ML`/`SPREAD`/`TOTAL` all have somewhere to land). It is still gated on
+      three prerequisites, none of which are W3:
+      - `teams` + an alias table (**W11 / F4**) — the history spells them `Seahwaks`,
+        `Cheifs`, `Arkansaw`, `Viilanova`; ~40 misspellings need to resolve
+      - **2024 games must be backfilled** — the database holds none, so a perfect parser has
+        nothing to join to. CFBD `/games?year=2024` and ESPN reach them with existing keys
+      - 2024 closing lines, to recover the **138 unsigned spreads** (`"Bears 1.5"` — the
+        number survives, the side does not). CFBD `/lines?year=2024` covers CFB; NFL has no
+        free source in the current stack
+      Ceiling even then: **84 LOTW rows carry no bet detail at all** (`bet_text` is the
+      literal string `LOTW`) and 19 are team-only. ~16% of the history is unrecoverable
+      regardless of effort — worth stating in the acceptance rather than chasing.
 
 **Acceptance:** history joins to `seasons`/`weeks` by FK; analytics reads one shape; the
 `bet_text` question is either resolved or formally closed with a reason.
@@ -440,7 +489,7 @@ Items needing Hayes' input before implementation. Record answers here as they la
 
 | Item | Question | Status |
 |---|---|---|
-| W3.1 | Straight-up or against-the-spread for 2026 onward? | Open — **due 2026-09-08** |
+| W3.1 | Straight-up or against-the-spread for 2026 onward? | ✅ Resolved 2026-09-08 — **both, plus totals**: `ML`/`SPREAD`/`TOTAL`, line entered by the member |
 | W4.2 | What is the forfeit penalty for a per-sport shortfall? | Open — moot for week 1 (CFB-only, no split) |
 | W8.1 | RLS-enforced reads, or server-authz with policies deleted? | **Deferred 2026-09-05** — F1/F2 accepted as known risk |
 | W13.1 | Delete the 2025 test season and 2026 preseason, or flag and filter? | Partly answered — flagged via `is_active`; delete-vs-retain still open |

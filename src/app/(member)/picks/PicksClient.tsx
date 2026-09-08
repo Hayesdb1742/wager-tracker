@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import {
+  BET_TYPES,
+  BET_TYPE_LABELS,
+  SELECTIONS_FOR,
+  formatWager,
+  type BetType,
+  type Selection,
+} from "@/lib/wagers";
 
 type Week = { id: number; week_number: number; required_picks: number; closes_at: string };
 type Game = {
@@ -8,13 +16,77 @@ type Game = {
   kickoff_time: string; status: string; in_pool: boolean;
   home_score: number | null; away_score: number | null; winner: string | null;
 };
-type PickInfo = { id: string; picked_team: string; is_lotw: boolean; overridden_by: string | null; overridden_at: string | null };
+type PickInfo = {
+  id: string;
+  bet_type: string;
+  selection: string;
+  line: number;
+  odds: number | null;
+  is_lotw: boolean;
+  overridden_by: string | null;
+  overridden_at: string | null;
+};
+
+type Draft = { bet_type: BetType; selection: Selection; line: number; odds: number | null };
 
 interface Props {
   week: Week;
   games: Game[];
   initialPickMap: Record<string, PickInfo>;
   memberId: string;
+}
+
+/** Identity of a wager, so a save only fires when something actually changed. */
+function signature(w: { bet_type: string; selection: string; line: number; odds: number | null }) {
+  return `${w.bet_type}|${w.selection}|${w.line}|${w.odds ?? ""}`;
+}
+
+/**
+ * Parse a line the member is still typing. Returns null for anything incomplete — a lone
+ * "-", a trailing "3." — so a half-typed number is never persisted.
+ */
+function parseLine(text: string): number | null {
+  const t = text.trim();
+  if (!/^[+-]?\d+(\.\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n)) return null;
+  if (Math.round(n * 2) !== n * 2) return null;  // books deal in halves
+  if (Math.abs(n) >= 1000) return null;
+  return n;
+}
+
+/** `null` value means "no price given", which is allowed. `ok: false` means "still typing". */
+function parseOdds(text: string): { ok: boolean; value: number | null } {
+  const t = text.trim();
+  if (t === "") return { ok: true, value: null };
+  if (!/^[+-]?\d+$/.test(t)) return { ok: false, value: null };
+  const n = Number(t);
+  if (n > -100 && n < 100) return { ok: false, value: null };
+  return { ok: true, value: n };
+}
+
+/** A complete, valid wager, or null while the member is still composing one. */
+function buildDraft(
+  betType: BetType,
+  selection: Selection | null,
+  lineText: string,
+  oddsText: string
+): Draft | null {
+  if (!selection) return null;
+  if (!SELECTIONS_FOR[betType].includes(selection)) return null;
+
+  const odds = parseOdds(oddsText);
+  if (!odds.ok) return null;
+
+  if (betType === "ML") {
+    return { bet_type: betType, selection, line: 0, odds: odds.value };
+  }
+
+  const line = parseLine(lineText);
+  if (line === null) return null;
+  if (betType === "TOTAL" && line <= 0) return null;
+
+  return { bet_type: betType, selection, line, odds: odds.value };
 }
 
 export function PicksClient({ week, games, initialPickMap }: Props) {
@@ -26,14 +98,14 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
   const pickCount = Object.keys(picks).length;
   const lotwPick = Object.values(picks).find((p) => p.is_lotw);
 
-  const savePick = useCallback(async (gameId: string, pickedTeam: string) => {
+  const savePick = useCallback(async (gameId: string, wager: Draft) => {
     setSaving(gameId);
     setErrors((e) => { const n = { ...e }; delete n[gameId]; return n; });
 
     const res = await fetch("/api/picks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ game_id: gameId, picked_team: pickedTeam }),
+      body: JSON.stringify({ game_id: gameId, ...wager }),
     });
     const data = await res.json();
     setSaving(null);
@@ -45,7 +117,16 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
 
     setPicks((prev) => ({
       ...prev,
-      [gameId]: { id: data.id, picked_team: pickedTeam, is_lotw: prev[gameId]?.is_lotw ?? false, overridden_by: null, overridden_at: null },
+      [gameId]: {
+        id: data.id,
+        bet_type: wager.bet_type,
+        selection: wager.selection,
+        line: wager.line,
+        odds: wager.odds,
+        is_lotw: prev[gameId]?.is_lotw ?? false,
+        overridden_by: null,
+        overridden_at: null,
+      },
     }));
   }, []);
 
@@ -118,7 +199,7 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
                   locked={isLocked(game)}
                   saving={saving}
                   error={errors[game.id] ?? errors[`lotw-${game.id}`] ?? null}
-                  onPick={savePick}
+                  onSave={savePick}
                   onLotw={saveLotw}
                 />
               ))}
@@ -130,17 +211,55 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
   );
 }
 
-function GameCard({ game, pick, locked, saving, error, onPick, onLotw }: {
+function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
   game: Game;
   pick: PickInfo | null;
   locked: boolean;
   saving: string | null;
   error: string | null;
-  onPick: (gameId: string, team: string) => void;
+  onSave: (gameId: string, wager: Draft) => void;
   onLotw: (gameId: string) => void;
 }) {
   const isSaving = saving === game.id;
   const isLotwSaving = saving === `lotw-${game.id}`;
+
+  // Most of this league's history is spreads, so that is the cheapest default.
+  const [betType, setBetType] = useState<BetType>((pick?.bet_type as BetType) ?? "SPREAD");
+  const [selection, setSelection] = useState<Selection | null>(
+    (pick?.selection as Selection) ?? null
+  );
+  const [lineText, setLineText] = useState(
+    pick && pick.bet_type !== "ML" ? String(pick.line) : ""
+  );
+  const [oddsText, setOddsText] = useState(pick?.odds != null ? String(pick.odds) : "");
+
+  const savedSig = useRef<string | null>(pick ? signature(pick) : null);
+
+  // Persist once the wager is complete and valid, debounced — never mid-keystroke.
+  useEffect(() => {
+    if (locked) return;
+    const draft = buildDraft(betType, selection, lineText, oddsText);
+    if (!draft) return;
+
+    const sig = signature(draft);
+    if (sig === savedSig.current) return;
+
+    const timer = setTimeout(() => {
+      savedSig.current = sig;
+      onSave(game.id, draft);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [betType, selection, lineText, oddsText, locked, game.id, onSave]);
+
+  /** Switching bet type invalidates a selection that no longer belongs to it. */
+  const changeBetType = (next: BetType) => {
+    setBetType(next);
+    if (selection && !SELECTIONS_FOR[next].includes(selection)) setSelection(null);
+    if (next === "ML") setLineText("");
+  };
+
+  const draft = buildDraft(betType, selection, lineText, oddsText);
+  const showScores = game.status === "FINAL";
 
   return (
     <div className={`bg-white border rounded-xl p-4 transition-opacity ${locked ? "opacity-75" : ""}`}>
@@ -170,50 +289,129 @@ function GameCard({ game, pick, locked, saving, error, onPick, onLotw }: {
             {isLotwSaving ? "…" : pick.is_lotw ? "🔒 LOTW" : "Set as LOTW"}
           </button>
         )}
-        {!locked && pick && pick.is_lotw && (
-          <span className="ml-2 text-xs text-amber-600">Lock of the Week</span>
+      </div>
+
+      {/* Matchup line, with scores once the game is final */}
+      <div className="flex items-baseline justify-between gap-2 mb-3 text-sm">
+        <span className="truncate">
+          <span className="text-gray-800">{game.away_team}</span>
+          <span className="text-gray-300"> at </span>
+          <span className="text-gray-800">{game.home_team}</span>
+        </span>
+        {showScores && game.away_score !== null && game.home_score !== null && (
+          <span className="tabular-nums text-gray-500 shrink-0">
+            {game.away_score}–{game.home_score}
+          </span>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {(["AWAY", "HOME"] as const).map((side) => {
-          const team = side === "HOME" ? game.home_team : game.away_team;
-          const score = side === "HOME" ? game.home_score : game.away_score;
-          const showScore = game.status === "FINAL" && score !== null;
-          const won = game.status === "FINAL" && game.winner === side;
-          const selected = pick?.picked_team === side;
-          return (
-            <button
-              key={side}
-              onClick={() => !locked && onPick(game.id, side)}
-              disabled={locked || isSaving}
-              className={`py-3 px-4 rounded-lg border-2 text-sm font-medium text-left transition-all ${
-                selected
-                  ? "border-blue-500 bg-blue-50 text-blue-700"
-                  : locked
-                  ? "border-gray-100 bg-gray-50 text-gray-400 cursor-default"
-                  : "border-gray-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer"
-              }`}
-            >
-              <div className="text-xs text-gray-400 mb-0.5">{side === "HOME" ? "Home" : "Away"}</div>
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate">{team}</span>
-                {showScore && (
-                  <span className={`tabular-nums font-semibold shrink-0 ${won ? "text-green-600" : "text-gray-400"}`}>
-                    {score}
-                  </span>
-                )}
-              </div>
-              {selected && <div className="text-xs text-blue-500 mt-0.5">✓ Your pick</div>}
-              {selected && pick?.overridden_by && (
-                <div className="text-xs text-orange-500 mt-0.5">
-                  Modified by admin{pick.overridden_at ? ` · ${new Date(pick.overridden_at).toLocaleDateString([], { month: "short", day: "numeric" })}` : ""}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {locked ? (
+        <div className="text-sm">
+          {pick ? (
+            <span className="font-medium text-gray-800">
+              {formatWager(pick, game, true)}
+              {pick.is_lotw && <span className="ml-1.5 text-xs text-amber-600">LOTW</span>}
+            </span>
+          ) : (
+            <span className="text-gray-400">No pick</span>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {/* Bet type */}
+          <div className="inline-flex rounded-lg border border-gray-200 p-0.5">
+            {BET_TYPES.map((bt) => (
+              <button
+                key={bt}
+                onClick={() => changeBetType(bt)}
+                className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  betType === bt ? "bg-blue-500 text-white" : "text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                {BET_TYPE_LABELS[bt]}
+              </button>
+            ))}
+          </div>
+
+          {/* Selection */}
+          <div className="grid grid-cols-2 gap-2">
+            {SELECTIONS_FOR[betType].map((side) => {
+              const label =
+                side === "HOME" ? game.home_team
+                : side === "AWAY" ? game.away_team
+                : side === "OVER" ? "Over"
+                : "Under";
+              const selected = selection === side;
+              return (
+                <button
+                  key={side}
+                  onClick={() => setSelection(side)}
+                  disabled={isSaving}
+                  className={`py-2.5 px-3 rounded-lg border-2 text-sm font-medium text-left transition-all truncate ${
+                    selected
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                      : "border-gray-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Line + price */}
+          <div className="flex gap-2">
+            {betType !== "ML" && (
+              <label className="flex-1">
+                <span className="block text-xs text-gray-400 mb-0.5">
+                  {betType === "TOTAL" ? "Total" : "Spread"}
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={lineText}
+                  onChange={(e) => setLineText(e.target.value)}
+                  placeholder={betType === "TOTAL" ? "52.5" : "-3.5"}
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-sm tabular-nums focus:border-blue-400 focus:outline-none"
+                />
+              </label>
+            )}
+            <label className="flex-1">
+              <span className="block text-xs text-gray-400 mb-0.5">Price (optional)</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={oddsText}
+                onChange={(e) => setOddsText(e.target.value)}
+                placeholder="-110"
+                className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-sm tabular-nums focus:border-blue-400 focus:outline-none"
+              />
+            </label>
+          </div>
+
+          {/* What will be saved */}
+          <div className="text-xs">
+            {draft ? (
+              <span className="text-blue-600">✓ {formatWager(draft, game, true)}</span>
+            ) : (
+              <span className="text-gray-400">
+                {!selection
+                  ? "Pick a side"
+                  : betType === "TOTAL"
+                  ? "Enter the total"
+                  : betType === "SPREAD"
+                  ? "Enter the spread"
+                  : "Check the price"}
+              </span>
+            )}
+            {pick?.overridden_by && (
+              <span className="ml-2 text-orange-500">
+                Modified by admin{pick.overridden_at ? ` · ${new Date(pick.overridden_at).toLocaleDateString([], { month: "short", day: "numeric" })}` : ""}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       {isSaving && <p className="mt-2 text-xs text-gray-400">Saving…</p>}

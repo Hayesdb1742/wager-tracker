@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { formatWager, wagerResult, GRADE_LABELS } from "@/lib/wagers";
 
 type Week = { id: number; week_number: number; status: string };
 
@@ -29,7 +30,10 @@ type GameInfo = {
 type PickInfo = {
   member_id: string;
   game_id: string;
-  picked_team: string;
+  bet_type: string;
+  selection: string;
+  line: number;
+  odds: number | null;
   is_lotw: boolean;
   points: number | null;
 };
@@ -256,59 +260,67 @@ export function LeaderboardClient({
                         {games.map((game) => {
                           const pick = memberPicks.find((p) => p.game_id === game.id);
                           const locked = new Date(game.kickoff_time) <= new Date();
-                          const showPick = locked && pick;
+                          // Picks are blind until kickoff. Everything below reads from
+                          // `revealed`, never from `pick` — reading `pick` directly is what
+                          // used to leak the picked side before the game started.
+                          const revealed = locked ? pick : undefined;
+                          const grade = revealed ? wagerResult(revealed.points, game.status) : null;
 
                           return (
                             <div key={game.id} className="flex items-center gap-2 text-sm">
                               {/* Result indicator */}
                               <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                !showPick ? "bg-gray-100 text-gray-300" :
-                                pick.points === null ? "bg-blue-100 text-blue-400" :
-                                pick.points > 0 ? "bg-green-100 text-green-600" :
-                                pick.points < 0 ? "bg-red-100 text-red-500" :
-                                "bg-gray-100 text-gray-500"
+                                grade === "WIN" ? "bg-green-100 text-green-600" :
+                                grade === "LOSS" ? "bg-red-100 text-red-500" :
+                                grade === "PENDING" ? "bg-blue-100 text-blue-400" :
+                                grade === "PUSH" || grade === "VOID" ? "bg-gray-100 text-gray-500" :
+                                "bg-gray-100 text-gray-300"
                               }`}>
-                                {!showPick ? "·" :
-                                  pick.points === null ? "?" :
-                                  pick.points > 0 ? "W" :
-                                  pick.points < 0 ? "L" : "P"}
+                                {grade === null ? "·" : grade === "PENDING" ? "?" : GRADE_LABELS[grade]}
                               </div>
 
                               {/* Matchup */}
                               <div className="flex-1 min-w-0">
                                 <span className="text-gray-500">{game.sport}</span>
                                 {" · "}
-                                <span className={pick?.picked_team === "AWAY" ? "font-semibold text-gray-900" : "text-gray-500"}>
+                                <span className="text-gray-500">
                                   {game.away_team}
                                   {game.status === "FINAL" && game.away_score !== null && (
                                     <span className="tabular-nums"> {game.away_score}</span>
                                   )}
                                 </span>
                                 <span className="text-gray-300"> @ </span>
-                                <span className={pick?.picked_team === "HOME" ? "font-semibold text-gray-900" : "text-gray-500"}>
+                                <span className="text-gray-500">
                                   {game.home_team}
                                   {game.status === "FINAL" && game.home_score !== null && (
                                     <span className="tabular-nums"> {game.home_score}</span>
                                   )}
                                 </span>
-                                {pick?.is_lotw && (
+                                {revealed && (
+                                  <span className="ml-1.5 font-semibold text-gray-900">
+                                    {formatWager(revealed, game, true)}
+                                  </span>
+                                )}
+                                {revealed?.is_lotw && (
                                   <span className="ml-1.5 text-xs text-amber-600 font-medium">LOTW</span>
                                 )}
                               </div>
 
                               {/* Points */}
                               <div className={`text-xs font-medium tabular-nums shrink-0 ${
-                                !showPick ? "text-gray-300" :
-                                pick.points === null ? "text-blue-400" :
-                                pick.points > 0 ? "text-green-600" :
-                                pick.points < 0 ? "text-red-500" :
+                                !revealed ? "text-gray-300" :
+                                grade === "PENDING" ? "text-blue-400" :
+                                grade === "WIN" ? "text-green-600" :
+                                grade === "LOSS" ? "text-red-500" :
                                 "text-gray-400"
                               }`}>
-                                {!showPick ? (locked ? "–" : "open") :
-                                  pick.points === null ? "live" :
-                                  pick.points > 0 ? `+${pick.points}` :
-                                  pick.points === 0 ? "±0" :
-                                  `${pick.points}`}
+                                {!revealed ? (locked ? "–" : "open") :
+                                  grade === "PENDING" ? "live" :
+                                  grade === "VOID" ? "void" :
+                                  revealed.points === null ? "live" :
+                                  revealed.points > 0 ? `+${revealed.points}` :
+                                  revealed.points === 0 ? "±0" :
+                                  `${revealed.points}`}
                               </div>
                             </div>
                           );

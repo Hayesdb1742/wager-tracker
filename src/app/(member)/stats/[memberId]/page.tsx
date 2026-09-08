@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { StatsClient } from "./StatsClient";
+import { selectedTeam, formatWager, formatMatchup } from "@/lib/wagers";
 
 export default async function MemberStatsPage({
   params,
@@ -35,7 +36,7 @@ export default async function MemberStatsPage({
   // This member's picks (resolved games only)
   const { data: picks } = await admin
     .from("picks")
-    .select("id, game_id, picked_team, is_lotw, points, games(home_team, away_team, winner, status, kickoff_time, sport)")
+    .select("id, game_id, bet_type, selection, line, odds, is_lotw, points, games(home_team, away_team, winner, status, kickoff_time, sport)")
     .eq("member_id", memberId)
     .not("points", "is", null)
     .order("games(kickoff_time)", { ascending: true });
@@ -111,7 +112,9 @@ export default async function MemberStatsPage({
   for (const p of resolvedPicks) {
     const game = p.games;
     if (!game) continue;
-    const team = p.picked_team === "HOME" ? game.home_team : game.away_team;
+    // Totals carry no team, so they sit out the team-tendency table.
+    const team = selectedTeam(p, game);
+    if (!team) continue;
     if (!teamMap.has(team)) teamMap.set(team, { team, picks: 0, wins: 0, losses: 0, pushes: 0 });
     const t = teamMap.get(team)!;
     t.picks += 1;
@@ -152,14 +155,14 @@ export default async function MemberStatsPage({
     .reverse()
     .map((p) => {
       const game = p.games;
-      const pickedTeam = p.picked_team === "HOME" ? game?.home_team : game?.away_team;
+      const wager = game ? formatWager(p, game) : "";
       const won = p.points !== null && (p.points as number) > 0;
       const lost = p.points !== null && (p.points as number) < 0;
       return {
         id: p.id,
         sport: game?.sport ?? "",
-        matchup: game ? `${game.away_team} @ ${game.home_team}` : "",
-        picked: pickedTeam ?? "",
+        matchup: game ? formatMatchup(game) : "",
+        picked: wager,
         kickoff_time: game?.kickoff_time ?? "",
         result: won ? "W" : lost ? "L" : "P",
         points: p.points,

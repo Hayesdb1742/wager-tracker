@@ -50,7 +50,7 @@ export function ResultsClient({ weeks, currentWeek, games: initialGames }: Props
   const games = initialGames.map((g) => (overrides[g.id] ? { ...g, ...overrides[g.id] } : g));
   const [syncing, setSyncing] = useState<"CFB" | "NFL" | "RESULTS" | null>(null);
   const [syncResult, setSyncResult] = useState<string | null>(null);
-  const [confirmOverride, setConfirmOverride] = useState<{ gameId: string; winner: string } | null>(null);
+  const [confirmOverride, setConfirmOverride] = useState<{ gameId: string; homeScore: number; awayScore: number } | null>(null);
   const [excludeConfirm, setExcludeConfirm] = useState<{ gameId: string; count: number } | null>(null);
   const [statusModal, setStatusModal] = useState<{ gameId: string; action: "POSTPONED" | "CANCELLED" } | null>(null);
 
@@ -99,11 +99,13 @@ export function ResultsClient({ weeks, currentWeek, games: initialGames }: Props
     if (res.ok) router.refresh();
   }
 
-  async function handleResult(gameId: string, winner: string, force = false) {
+  // Scores, not a winner. Members hold their own spreads and totals, so the margin is
+  // what grades a week -- "HOME won" is not enough.
+  async function handleResult(gameId: string, homeScore: number, awayScore: number, force = false) {
     if (!force) {
       const game = games.find((g) => g.id === gameId);
       if (game?.status === "FINAL") {
-        setConfirmOverride({ gameId, winner });
+        setConfirmOverride({ gameId, homeScore, awayScore });
         return;
       }
     }
@@ -111,10 +113,16 @@ export function ResultsClient({ weeks, currentWeek, games: initialGames }: Props
     const res = await fetch(`/api/admin/games/${gameId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ winner, force }),
+      body: JSON.stringify({ home_score: homeScore, away_score: awayScore, force }),
     });
     if (!res.ok) { alert((await res.json()).error); return; }
-    updateGame(gameId, { status: "FINAL", winner, manual_resolved: true });
+    updateGame(gameId, {
+      status: "FINAL",
+      home_score: homeScore,
+      away_score: awayScore,
+      winner: homeScore > awayScore ? "HOME" : awayScore > homeScore ? "AWAY" : "PUSH",
+      manual_resolved: true,
+    });
   }
 
   async function handlePoolToggle(gameId: string, inPool: boolean, force = false) {
@@ -262,10 +270,10 @@ export function ResultsClient({ weeks, currentWeek, games: initialGames }: Props
       {confirmOverride && (
         <Modal title="Correct result?" onClose={() => setConfirmOverride(null)}>
           <p className="text-sm text-gray-600 mb-4">
-            This game is already FINAL. Changing the result will trigger a full scoring recalculation for all affected members.
+            This game is already FINAL. Changing the score re-grades every wager on it against each member\u2019s own line, so results may move for some members and not others.
           </p>
           <div className="flex gap-3">
-            <button onClick={() => handleResult(confirmOverride.gameId, confirmOverride.winner, true)}
+            <button onClick={() => handleResult(confirmOverride.gameId, confirmOverride.homeScore, confirmOverride.awayScore, true)}
               className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700">
               Update result
             </button>
@@ -313,7 +321,7 @@ export function ResultsClient({ weeks, currentWeek, games: initialGames }: Props
 
 function GameRow({ game, onResult, onPoolToggle, onStatusChange, onResetToApi }: {
   game: Game;
-  onResult: (id: string, winner: string) => void;
+  onResult: (id: string, homeScore: number, awayScore: number) => void;
   onPoolToggle: (id: string, inPool: boolean) => void;
   onStatusChange: (id: string, action: "POSTPONED" | "CANCELLED") => void;
   onResetToApi: (id: string) => void;
@@ -357,24 +365,8 @@ function GameRow({ game, onResult, onPoolToggle, onStatusChange, onResetToApi }:
         </span>
       )}
 
-      {/* Result buttons */}
-      {game.status !== "CANCELLED" && (
-        <div className="flex gap-1">
-          {(["HOME", "AWAY", "PUSH"] as const).map((w) => (
-            <button
-              key={w}
-              onClick={() => onResult(game.id, w)}
-              className={`text-xs px-2 py-1 rounded border transition-colors ${
-                game.winner === w
-                  ? "bg-green-600 text-white border-green-600"
-                  : "hover:bg-gray-50 text-gray-600"
-              }`}
-            >
-              {w === "HOME" ? game.home_team.split(" ").pop() : w === "AWAY" ? game.away_team.split(" ").pop() : "Push"}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Score entry */}
+      {game.status !== "CANCELLED" && <ScoreEntry game={game} onResult={onResult} />}
 
       {/* Pool + status controls */}
       <div className="flex gap-1">
@@ -414,6 +406,51 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
         <h2 className="font-semibold text-lg mb-3">{title}</h2>
         {children}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Two score boxes and a save. Pre-filled from whatever the API sync last recorded, so a
+ * correction starts from the current number rather than from blank.
+ */
+function ScoreEntry({ game, onResult }: {
+  game: Game;
+  onResult: (id: string, homeScore: number, awayScore: number) => void;
+}) {
+  const [away, setAway] = useState(game.away_score !== null ? String(game.away_score) : "");
+  const [home, setHome] = useState(game.home_score !== null ? String(game.home_score) : "");
+
+  const parse = (t: string) => (/^\d+$/.test(t.trim()) ? Number(t.trim()) : null);
+  const a = parse(away);
+  const h = parse(home);
+  const ready = a !== null && h !== null;
+  const changed = a !== game.away_score || h !== game.home_score;
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="text" inputMode="numeric" value={away}
+        onChange={(e) => setAway(e.target.value)}
+        placeholder={game.away_team.split(" ").pop()}
+        title={`${game.away_team} (away)`}
+        className="w-12 px-1.5 py-1 rounded border border-gray-200 text-xs tabular-nums text-center"
+      />
+      <span className="text-xs text-gray-300">–</span>
+      <input
+        type="text" inputMode="numeric" value={home}
+        onChange={(e) => setHome(e.target.value)}
+        placeholder={game.home_team.split(" ").pop()}
+        title={`${game.home_team} (home)`}
+        className="w-12 px-1.5 py-1 rounded border border-gray-200 text-xs tabular-nums text-center"
+      />
+      <button
+        onClick={() => ready && onResult(game.id, h, a)}
+        disabled={!ready || !changed}
+        className="text-xs px-2 py-1 rounded border transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-green-50 text-green-700 border-green-300"
+      >
+        {game.status === "FINAL" ? "Correct" : "Resolve"}
+      </button>
     </div>
   );
 }

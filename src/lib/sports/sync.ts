@@ -153,7 +153,8 @@ export async function syncResultsForWeek(
         if (game.status !== "FINAL") {
           const { error: rpcError } = await admin.rpc("resolve_game", {
             p_game_id: game.id,
-            p_winner: deriveWinner(up.home_score, up.away_score),
+            p_home_score: up.home_score,
+            p_away_score: up.away_score,
           });
           if (rpcError) throw new Error(rpcError.message);
           summary.resolved++;

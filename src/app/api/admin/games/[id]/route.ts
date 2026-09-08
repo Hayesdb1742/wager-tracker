@@ -44,11 +44,20 @@ export async function PATCH(
   }
 
   // --- Result entry / correction ---
-  if ("winner" in body) {
-    const { winner, force } = body;
+  //
+  // Scores, not a winner. Members hold their own spreads and totals, so "HOME won" is not
+  // enough to grade a week — resolve_game derives games.winner from these for display.
+  if ("home_score" in body || "away_score" in body) {
+    const { home_score, away_score, force } = body;
 
-    if (!["HOME", "AWAY", "PUSH"].includes(winner)) {
-      return NextResponse.json({ error: "winner must be HOME, AWAY, or PUSH" }, { status: 400 });
+    const scoresValid = [home_score, away_score].every(
+      (s) => Number.isInteger(s) && s >= 0
+    );
+    if (!scoresValid) {
+      return NextResponse.json(
+        { error: "home_score and away_score must both be non-negative whole numbers" },
+        { status: 400 }
+      );
     }
 
     // Check if already FINAL — warn unless force
@@ -64,7 +73,8 @@ export async function PATCH(
 
     const { error } = await admin.rpc("resolve_game", {
       p_game_id: id,
-      p_winner: winner,
+      p_home_score: home_score,
+      p_away_score: away_score,
     });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

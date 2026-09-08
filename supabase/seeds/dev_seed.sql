@@ -89,8 +89,8 @@ ON CONFLICT (sport, external_id) DO NOTHING;
 -- Alyssa:  AWAY  HOME  HOME  AWAY  HOME  AWAY  HOME  HOME* G8 → W3 L5 total=-1
 -- Tyler:   AWAY  AWAY  HOME  AWAY  HOME  AWAY  AWAY  AWAY* G8 → W0 L8 LOTW LOSS total=-9
 
-INSERT INTO public.picks (member_id, game_id, week_id, picked_team, is_lotw, points)
-WITH raw_picks (member_id, game_id, picked_team, is_lotw) AS (VALUES
+INSERT INTO public.picks (member_id, game_id, week_id, bet_type, selection, line, is_lotw, points)
+WITH raw_picks (member_id, game_id, selection, is_lotw) AS (VALUES
   -- Bryce
   ('aa000001-0000-0000-0000-000000000001'::uuid,'40000001-0000-0000-0000-000000000001'::uuid,'HOME'::text,false),
   ('aa000001-0000-0000-0000-000000000001'::uuid,'40000002-0000-0000-0000-000000000002'::uuid,'HOME',false),
@@ -177,15 +177,15 @@ SELECT
   r.member_id,
   r.game_id,
   4 AS week_id,
-  r.picked_team,
+  'ML' AS bet_type,
+  r.selection,
+  0 AS line,
   r.is_lotw,
-  CASE
-    WHEN g.winner = 'PUSH'                                   THEN 0
-    WHEN r.picked_team = g.winner AND r.is_lotw              THEN 2
-    WHEN r.picked_team = g.winner AND NOT r.is_lotw          THEN 1
-    WHEN r.picked_team != g.winner AND r.is_lotw             THEN -2
-    WHEN r.picked_team != g.winner AND NOT r.is_lotw         THEN -1
-    ELSE 0
+  CASE public.grade_pick('ML', r.selection, 0, g.home_score, g.away_score)
+    WHEN 'WIN'  THEN CASE WHEN r.is_lotw THEN  2 ELSE  1 END
+    WHEN 'LOSS' THEN CASE WHEN r.is_lotw THEN -2 ELSE -1 END
+    WHEN 'PUSH' THEN 0
+    ELSE NULL
   END AS points
 FROM raw_picks r
 JOIN public.games g ON g.id = r.game_id
@@ -196,8 +196,8 @@ WHERE NOT EXISTS (
 
 -- ── WEEK 5 PICKS (locked games have computed points; upcoming = NULL) ─────────
 -- Locked: G1 LSU HOME wins, G2 Patriots HOME / Jets AWAY wins
-INSERT INTO public.picks (member_id, game_id, week_id, picked_team, is_lotw, points)
-WITH raw_picks (member_id, game_id, picked_team, is_lotw) AS (VALUES
+INSERT INTO public.picks (member_id, game_id, week_id, bet_type, selection, line, is_lotw, points)
+WITH raw_picks (member_id, game_id, selection, is_lotw) AS (VALUES
   -- Bryce: G1 HOME(W), G2 HOME(L), open picks G3/G4/G5
   ('aa000001-0000-0000-0000-000000000001'::uuid,'50000001-0000-0000-0000-000000000001'::uuid,'HOME'::text,false),
   ('aa000001-0000-0000-0000-000000000001'::uuid,'50000002-0000-0000-0000-000000000002'::uuid,'HOME',false),
@@ -221,16 +221,18 @@ SELECT
   r.member_id,
   r.game_id,
   5 AS week_id,
-  r.picked_team,
+  'ML' AS bet_type,
+  r.selection,
+  0 AS line,
   r.is_lotw,
   CASE
-    WHEN g.status != 'FINAL'                                 THEN NULL
-    WHEN g.winner = 'PUSH'                                   THEN 0
-    WHEN r.picked_team = g.winner AND r.is_lotw              THEN 2
-    WHEN r.picked_team = g.winner AND NOT r.is_lotw          THEN 1
-    WHEN r.picked_team != g.winner AND r.is_lotw             THEN -2
-    WHEN r.picked_team != g.winner AND NOT r.is_lotw         THEN -1
-    ELSE NULL
+    WHEN g.status != 'FINAL' THEN NULL
+    ELSE CASE public.grade_pick('ML', r.selection, 0, g.home_score, g.away_score)
+      WHEN 'WIN'  THEN CASE WHEN r.is_lotw THEN  2 ELSE  1 END
+      WHEN 'LOSS' THEN CASE WHEN r.is_lotw THEN -2 ELSE -1 END
+      WHEN 'PUSH' THEN 0
+      ELSE NULL
+    END
   END AS points
 FROM raw_picks r
 JOIN public.games g ON g.id = r.game_id

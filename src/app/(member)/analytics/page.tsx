@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
+import { selectedTeam } from "@/lib/wagers";
 
 type AllTimeStat = {
   member_id: string;
@@ -29,7 +30,7 @@ export default async function AnalyticsPage() {
   const [profilesRes, scoresRes, picksRes, seasonsRes] = await Promise.all([
     admin.from("profiles").select("id, display_name").eq("is_active", true),
     admin.from("weekly_scores").select("member_id, total, week_id, weeks(season_id, status)"),
-    admin.from("picks").select("member_id, picked_team, is_lotw, points, games(home_team, away_team, winner, status)").not("points", "is", null),
+    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, points, games(home_team, away_team, winner, status)").not("points", "is", null),
     admin.from("seasons").select("id, name, year").order("year", { ascending: false }),
   ]);
 
@@ -96,7 +97,9 @@ export default async function AnalyticsPage() {
   for (const pick of picks) {
     const game = pick.games;
     if (!game || game.status !== "FINAL") continue;
-    const teamName = pick.picked_team === "HOME" ? game.home_team : game.away_team;
+    // A total is not a bet on a team, so it has no place in team tendencies.
+    const teamName = selectedTeam(pick, game);
+    if (!teamName) continue;
     if (!teamMap.has(teamName)) {
       teamMap.set(teamName, { team: teamName, picks: 0, wins: 0, losses: 0, pushes: 0, win_pct: 0 });
     }

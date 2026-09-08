@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { validateWager } from "@/lib/wagers";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -8,10 +9,17 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { game_id, picked_team } = body;
+  const { game_id, bet_type, selection, line, odds } = body;
 
-  if (!game_id || !["HOME", "AWAY"].includes(picked_team)) {
-    return NextResponse.json({ error: "game_id and picked_team (HOME|AWAY) required" }, { status: 400 });
+  if (!game_id) {
+    return NextResponse.json({ error: "game_id required" }, { status: 400 });
+  }
+
+  // Mirrors the CHECK constraints so a bad wager fails readably rather than as a
+  // constraint violation. `line` has no default in the schema: an ML must send 0.
+  const invalid = validateWager({ bet_type, selection, line, odds });
+  if (invalid) {
+    return NextResponse.json({ error: invalid }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -32,7 +40,15 @@ export async function POST(request: NextRequest) {
   const { data, error } = await admin
     .from("picks")
     .upsert(
-      { member_id: user.id, game_id, week_id: game.week_id, picked_team },
+      {
+        member_id: user.id,
+        game_id,
+        week_id: game.week_id,
+        bet_type,
+        selection,
+        line,
+        odds: odds ?? null,
+      },
       { onConflict: "member_id,game_id" }
     )
     .select()

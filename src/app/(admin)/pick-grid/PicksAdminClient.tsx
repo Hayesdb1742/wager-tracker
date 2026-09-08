@@ -2,12 +2,24 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import {
+  BET_TYPES, BET_TYPE_LABELS, SELECTIONS_FOR, formatWager, formatWagerShort,
+  formatLine, wagerResult, GRADE_LABELS, validateWager,
+  type BetType, type Selection,
+} from "@/lib/wagers";
 
 type Week = { id: number; week_number: number; status: string; required_picks: number };
 type Game = { id: string; sport: string; home_team: string; away_team: string; kickoff_time: string; status: string; winner: string | null };
 type Member = { id: string; display_name: string };
-type PickRow = { id: string; member_id: string; game_id: string; picked_team: string; is_lotw: boolean; points: number | null; overridden_by: string | null; overridden_at: string | null };
-type AuditEntry = { id: string; pick_id: string; previous_team: string; new_team: string; changed_by_name: string; changed_at: string };
+type PickRow = { id: string; member_id: string; game_id: string; bet_type: string; selection: string; line: number; odds: number | null; is_lotw: boolean; points: number | null; overridden_by: string | null; overridden_at: string | null };
+type AuditEntry = {
+  id: string; pick_id: string;
+  previous_bet_type: string; previous_selection: string; previous_line: number;
+  new_bet_type: string; new_selection: string; new_line: number;
+  changed_by_name: string; changed_at: string;
+};
+
+type WagerInput = { bet_type: BetType; selection: Selection; line: number; odds: number | null };
 
 interface Props {
   weeks: Week[];
@@ -24,10 +36,36 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
   const [activeCell, setActiveCell] = useState<{ memberId: string; gameId: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pendingFinal, setPendingFinal] = useState<{ memberId: string; gameId: string; team: string } | null>(null);
+  const [pendingFinal, setPendingFinal] = useState<{ memberId: string; gameId: string; wager: WagerInput } | null>(null);
   const [tab, setTab] = useState<"grid" | "audit">("grid");
 
   const isLocked = (game: Game) => new Date(game.kickoff_time) <= new Date();
+
+  // Override composer state. Re-seeded whenever the admin opens a different cell.
+  const [ovBetType, setOvBetType] = useState<BetType>("SPREAD");
+  const [ovSelection, setOvSelection] = useState<Selection | null>(null);
+  const [ovLine, setOvLine] = useState("");
+  const [ovOdds, setOvOdds] = useState("");
+
+  const openCell = (memberId: string, gameId: string) => {
+    const existing = pickMap[memberId]?.[gameId];
+    setOvBetType((existing?.bet_type as BetType) ?? "SPREAD");
+    setOvSelection((existing?.selection as Selection) ?? null);
+    setOvLine(existing && existing.bet_type !== "ML" ? String(existing.line) : "");
+    setOvOdds(existing?.odds != null ? String(existing.odds) : "");
+    setActiveCell({ memberId, gameId });
+  };
+
+  /** The composed override, or null while it is incomplete or invalid. */
+  const buildOverride = (): WagerInput | null => {
+    if (!ovSelection) return null;
+    const line = ovBetType === "ML" ? 0 : Number(ovLine.trim());
+    if (ovBetType !== "ML" && (ovLine.trim() === "" || !Number.isFinite(line))) return null;
+    const odds = ovOdds.trim() === "" ? null : Number(ovOdds.trim());
+    if (odds !== null && !Number.isFinite(odds)) return null;
+    const wager = { bet_type: ovBetType, selection: ovSelection, line, odds };
+    return validateWager(wager) === null ? wager : null;
+  };
 
   const handleWeekChange = (weekId: string) => {
     router.push(`/admin/picks?week=${weekId}`);
@@ -37,7 +75,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
   const activeGame = activeCell ? games.find((g) => g.id === activeCell.gameId) : null;
   const activeMember = activeCell ? members.find((m) => m.id === activeCell.memberId) : null;
 
-  const doOverride = useCallback(async (memberId: string, gameId: string, pickedTeam: string, force = false) => {
+  const doOverride = useCallback(async (memberId: string, gameId: string, wager: WagerInput, force = false) => {
     setSaving(true);
     setError(null);
 
@@ -48,7 +86,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
         member_id: memberId,
         game_id: gameId,
         week_id: selectedWeek?.id,
-        picked_team: pickedTeam,
+        ...wager,
         force,
       }),
     });
@@ -57,7 +95,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
 
     if (!res.ok) {
       if (data.error === "game_final") {
-        setPendingFinal({ memberId, gameId, team: pickedTeam });
+        setPendingFinal({ memberId, gameId, wager });
         return;
       }
       setError(data.error ?? "Override failed");
@@ -75,7 +113,10 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
           id: existing?.id ?? "optimistic",
           member_id: memberId,
           game_id: gameId,
-          picked_team: pickedTeam,
+          bet_type: wager.bet_type,
+          selection: wager.selection,
+          line: wager.line,
+          odds: wager.odds,
           is_lotw: existing?.is_lotw ?? false,
           points: existing?.points ?? null,
           overridden_by: "admin",
@@ -137,25 +178,24 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
   const memberHasLotw = (memberId: string) =>
     Object.values(pickMap[memberId] ?? {}).some((p) => p.is_lotw);
 
+  // Colour and label both come from the wager's own grade now -- comparing a picked team
+  // to games.winner would be wrong for anyone holding a spread or a total.
   const pickResultColor = (pick: PickRow | undefined, game: Game) => {
     if (!pick) return "text-gray-300";
-    if (game.status !== "FINAL") return "text-gray-700";
-    if (game.winner === "PUSH") return "text-gray-400";
-    if (pick.picked_team === game.winner) return "text-green-600";
-    return "text-red-500";
+    const grade = wagerResult(pick.points, game.status);
+    if (grade === "WIN") return "text-green-600";
+    if (grade === "LOSS") return "text-red-500";
+    if (grade === "PUSH" || grade === "VOID") return "text-gray-400";
+    return "text-gray-700";
   };
 
   const pickLabel = (pick: PickRow | undefined, game: Game) => {
     if (!pick) return "—";
-    const team = pick.picked_team === "HOME" ? game.home_team : game.away_team;
-    const abbr = team.slice(0, 3).toUpperCase();
     const lotw = pick.is_lotw ? " ★" : "";
     const override = pick.overridden_by ? " ●" : "";
-    if (game.status === "FINAL") {
-      const won = pick.picked_team === game.winner;
-      return `${abbr}${lotw}${override} ${won ? "W" : game.winner === "PUSH" ? "P" : "L"}`;
-    }
-    return `${abbr}${lotw}${override}`;
+    const grade = wagerResult(pick.points, game.status);
+    const suffix = grade === "PENDING" ? "" : ` ${GRADE_LABELS[grade]}`;
+    return `${formatWagerShort(pick, game)}${lotw}${override}${suffix}`;
   };
 
   return (
@@ -211,7 +251,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
               </p>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { doOverride(pendingFinal.memberId, pendingFinal.gameId, pendingFinal.team, true); setPendingFinal(null); }}
+                  onClick={() => { doOverride(pendingFinal.memberId, pendingFinal.gameId, pendingFinal.wager, true); setPendingFinal(null); }}
                   className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-sm font-medium"
                 >
                   Yes, override and recalculate
@@ -293,8 +333,8 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
                             return (
                               <td key={game.id} className="px-1 py-1 text-center">
                                 <button
-                                  onClick={() => setActiveCell(isActive ? null : { memberId: member.id, gameId: game.id })}
-                                  title={pick ? `${pick.picked_team === "HOME" ? game.home_team : game.away_team}${pick.is_lotw ? " (LOTW)" : ""}${pick.overridden_by ? " (overridden)" : ""}` : "No pick"}
+                                  onClick={() => isActive ? setActiveCell(null) : openCell(member.id, game.id)}
+                                  title={pick ? `${formatWager(pick, game, true)}${pick.is_lotw ? " (LOTW)" : ""}${pick.overridden_by ? " (overridden)" : ""}` : "No pick"}
                                   className={`w-full px-1 py-1 rounded text-xs font-medium transition-colors ${
                                     isActive
                                       ? "bg-blue-100 ring-2 ring-blue-400"
@@ -339,25 +379,87 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
                     <button onClick={() => setActiveCell(null)} className="text-gray-300 hover:text-gray-500">✕</button>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    {(["HOME", "AWAY"] as const).map((side) => {
-                      const team = side === "HOME" ? activeGame.home_team : activeGame.away_team;
-                      const isCurrent = activePick?.picked_team === side;
+                  {activePick && (
+                    <p className="text-sm text-gray-600 mb-3">
+                      Current: <span className="font-medium text-gray-900">{formatWager(activePick, activeGame, true)}</span>
+                    </p>
+                  )}
+
+                  {/* Override composer -- the admin records the wager the member actually
+                      placed, so it needs the same three bet types the member has. */}
+                  <div className="flex flex-wrap items-end gap-2 mb-3">
+                    <div className="inline-flex rounded-lg border border-gray-200 p-0.5">
+                      {BET_TYPES.map((bt) => (
+                        <button
+                          key={bt}
+                          onClick={() => {
+                            setOvBetType(bt);
+                            if (ovSelection && !SELECTIONS_FOR[bt].includes(ovSelection)) setOvSelection(null);
+                            if (bt === "ML") setOvLine("");
+                          }}
+                          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
+                            ovBetType === bt ? "bg-blue-500 text-white" : "text-gray-500 hover:text-gray-800"
+                          }`}
+                        >
+                          {BET_TYPE_LABELS[bt]}
+                        </button>
+                      ))}
+                    </div>
+
+                    {SELECTIONS_FOR[ovBetType].map((side) => {
+                      const label =
+                        side === "HOME" ? activeGame.home_team
+                        : side === "AWAY" ? activeGame.away_team
+                        : side === "OVER" ? "Over" : "Under";
                       return (
                         <button
                           key={side}
-                          onClick={() => doOverride(activeCell.memberId, activeCell.gameId, side)}
+                          onClick={() => setOvSelection(side)}
                           disabled={saving}
-                          className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-colors ${
-                            isCurrent
+                          className={`px-3 py-1.5 rounded-lg border-2 text-sm font-medium transition-colors ${
+                            ovSelection === side
                               ? "border-blue-500 bg-blue-50 text-blue-700"
                               : "border-gray-200 hover:border-blue-300 hover:bg-blue-50"
                           }`}
                         >
-                          {isCurrent ? "✓ " : ""}{team}
+                          {label}
                         </button>
                       );
                     })}
+
+                    {ovBetType !== "ML" && (
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={ovLine}
+                        onChange={(e) => setOvLine(e.target.value)}
+                        placeholder={ovBetType === "TOTAL" ? "52.5" : "-3.5"}
+                        className="w-24 px-2.5 py-1.5 rounded-lg border border-gray-200 text-sm tabular-nums"
+                      />
+                    )}
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={ovOdds}
+                      onChange={(e) => setOvOdds(e.target.value)}
+                      placeholder="-110"
+                      className="w-24 px-2.5 py-1.5 rounded-lg border border-gray-200 text-sm tabular-nums"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        const wager = buildOverride();
+                        if (!wager) { setError("Complete the wager first"); return; }
+                        setError(null);
+                        doOverride(activeCell.memberId, activeCell.gameId, wager);
+                      }}
+                      disabled={saving || !buildOverride()}
+                      className="px-4 py-2 rounded-lg border-2 border-blue-500 bg-blue-50 text-blue-700 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Save override
+                    </button>
 
                     {activePick && selectedWeek.status !== "CLOSED" && (
                       <button
@@ -404,9 +506,17 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
                         </td>
                         <td className="px-4 py-2.5 font-medium text-gray-900">{entry.changed_by_name}</td>
                         <td className="px-4 py-2.5 text-gray-600">
-                          <span className="text-red-500">{entry.previous_team}</span>
+                          <span className="text-red-500">
+                            {entry.previous_bet_type === "TOTAL"
+                              ? `${entry.previous_selection === "OVER" ? "O" : "U"} ${entry.previous_line}`
+                              : `${entry.previous_selection} ${entry.previous_bet_type === "ML" ? "ML" : formatLine(entry.previous_line)}`}
+                          </span>
                           {" → "}
-                          <span className="text-green-600">{entry.new_team}</span>
+                          <span className="text-green-600">
+                            {entry.new_bet_type === "TOTAL"
+                              ? `${entry.new_selection === "OVER" ? "O" : "U"} ${entry.new_line}`
+                              : `${entry.new_selection} ${entry.new_bet_type === "ML" ? "ML" : formatLine(entry.new_line)}`}
+                          </span>
                         </td>
                       </tr>
                     ))}
