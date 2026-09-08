@@ -22,12 +22,25 @@ function LoginForm() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${location.origin}/auth/callback` },
+      options: {
+        // This is a private league. Without this, Supabase signs up any address
+        // that is typed in, which turns this form into open registration.
+        shouldCreateUser: false,
+        emailRedirectTo: `${location.origin}/auth/callback`,
+      },
     });
 
     setLoading(false);
 
-    if (error) {
+    // With shouldCreateUser off, an unregistered address comes back as
+    // `otp_disabled`. Swallow that so the outcome looks identical either way --
+    // surfacing it would turn this form into an email enumeration oracle and
+    // contradict the deliberately vague message shown below.
+    const isUnregistered =
+      error?.code === "otp_disabled" ||
+      /signups not allowed/i.test(error?.message ?? "");
+
+    if (error && !isUnregistered) {
       setError(error.message);
       return;
     }
