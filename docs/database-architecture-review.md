@@ -74,7 +74,7 @@ Severity reflects blast radius × likelihood, not effort to fix.
 
 | ID | Finding | Severity | Status |
 |---|---|---|---|
-| [F1](#f1-scoring-functions-are-world-writable-via-the-rest-api) | Scoring RPCs world-writable via REST | 🔴 Critical | Open |
+| [F1](#f1-scoring-functions-are-world-writable-via-the-rest-api) | Scoring RPCs world-writable via REST | 🔴 Critical | **Resolved 2026-09-08** |
 | [F2](#f2-rls-is-decorative--the-whole-app-runs-as-service_role) | RLS decorative; app runs as `service_role` | 🔴 Critical | Open |
 | [F3](#f3-live-scoring-model-diverges-from-league-history-cutting-off-reconciliation) | Scoring model diverges from history (by design) | 🟠 High | **Resolved 2026-09-08** |
 | [F4](#f4-team-identity-is-unnormalized-free-text-the-teams-table-is-dead) | Team identity is free text; `teams` dead | 🟠 High | Open |
@@ -99,6 +99,12 @@ Severity reflects blast radius × likelihood, not effort to fix.
 ### 🔴 Critical
 
 #### F1. Scoring functions are world-writable via the REST API
+
+> **Resolved 2026-09-08** by migrations `20260908202846_revoke_public_rpc_execute`
+> and `20260908203026_revoke_public_rpc_execute_from_public`, ahead of the Vercel
+> deploy. The signature recorded below is stale: the live function is
+> `resolve_game(uuid, integer, integer)`. See W2 in the remediation backlog for the
+> PUBLIC-grant gotcha that made the first migration insufficient.
 
 `resolve_game(uuid, text)` and `close_week(int)` are `SECURITY DEFINER`, contain **no
 internal authorization check**, and carry `EXECUTE` for both `anon` and `authenticated`:

@@ -86,9 +86,10 @@ after this point inherits the divergence.
 
 ## Wave 1 — Before week 1 closes (2026-09-08)
 
-### W2. Revoke public EXECUTE on the SECURITY DEFINER RPCs
+### W2. Revoke public EXECUTE on the SECURITY DEFINER RPCs ✅
 
 **Finding:** F1 (🔴 Critical) · **Size:** S · **Depends on:** W1
+**Status: done 2026-09-08**, in two migrations — see the PUBLIC gotcha below.
 
 `resolve_game`, `close_week`, `handle_new_user`, and `rls_auto_enable` are `SECURITY
 DEFINER` and carry `EXECUTE` for `anon` and `authenticated`. The anon key ships to the
@@ -96,35 +97,54 @@ browser, so anyone holding it can call `POST /rest/v1/rpc/resolve_game` with any
 any winner, rewriting results and every member's score. The app only ever calls these
 through the service-role client, so nothing legitimate depends on the grants.
 
-- [ ] 2.1 Write a migration revoking the grants:
-      ```sql
-      revoke execute on function public.resolve_game(uuid, text)  from anon, authenticated;
-      revoke execute on function public.close_week(integer)       from anon, authenticated;
-      revoke execute on function public.handle_new_user()         from anon, authenticated;
-      revoke execute on function public.rls_auto_enable()         from anon, authenticated;
-      ```
-- [ ] 2.2 Pin `search_path` on the three functions missing it (`resolve_game`, `close_week`,
-      `custom_access_token_hook`) — `alter function … set search_path = ''`, then
-      schema-qualify every identifier in the body. `handle_new_user` already does this
-      correctly; copy its pattern.
-- [ ] 2.3 Add a defensive guard as the first statement of `resolve_game` and `close_week`:
-      `if auth.role() <> 'service_role' then raise exception 'forbidden'; end if;` — defence
-      in depth, so a future `grant` cannot silently re-open the hole
-- [ ] 2.4 Regression-check the four callers still work:
-      `api/admin/picks/override/route.ts:80`, `api/admin/weeks/[id]/close/route.ts:38`,
-      `api/admin/games/[id]/route.ts:65`, `lib/sports/sync.ts:154`
+- [x] 2.1 Write a migration revoking the grants —
+      `20260908202846_revoke_public_rpc_execute.sql`, then
+      `20260908203026_revoke_public_rpc_execute_from_public.sql`
+- [x] 2.2 Pin `search_path` on the functions missing it. Done for `resolve_game`,
+      `close_week`, `custom_access_token_hook` **and `grade_pick`** (the linter flagged
+      four, not three). No body needed re-qualifying — all four already schema-qualify
+      every identifier, so `search_path = ''` was a runtime no-op.
+- [x] 2.3 Add a defensive guard as the first statement of `resolve_game` and `close_week`.
+      Written as `if auth.role() is not null and auth.role() <> 'service_role'` — the
+      null arm matters, because `auth.role()` is null on a direct database connection
+      (psql, `supabase db push`, the MCP tool), and a bare `<>` check would lock migrations
+      and admin SQL out of the functions.
+- [x] 2.4 Regression-check the four callers still work — all four use `createAdminClient()`
+      (service role), verified at `api/admin/picks/override/route.ts:97`,
+      `api/admin/weeks/[id]/close/route.ts:38`, `api/admin/games/[id]/route.ts:74`,
+      `lib/sports/sync.ts:154`. Exercised over live PostgREST: anon → both RPCs return
+      `401 / 42501 permission denied`; service_role → `resolve_game` on a nonexistent
+      game id returns `204` (no-op). `custom_access_token_hook` still resolves ADMIN and
+      MEMBER correctly after the `search_path` change.
 
-**Acceptance:** `mcp__supabase__get_advisors({type:"security"})` no longer reports
-`anon_security_definer_function_executable` or `authenticated_security_definer_function_executable`
-for these functions; `function_search_path_mutable` is clear; admin close/resolve flows pass.
+> **Gotcha: revoking from `anon, authenticated` is not enough.** Postgres grants `EXECUTE`
+> to `PUBLIC` by default on every function, and `anon`/`authenticated` inherit through it.
+> After the first migration the advisor still reported both
+> `*_security_definer_function_executable` lints. The real fix is
+> `revoke execute on function … from public`.
+>
+> **The verify query below was wrong in the same way** and is corrected here: filtering on
+> `pg_get_userbyid(ac.grantee) in ('anon','authenticated')` never matches the PUBLIC entry,
+> which is grantee **OID 0** and renders as `unknown (OID=0)`. The original query returned
+> zero rows — a clean bill of health — while the grant was still live.
+
+**Acceptance:** ✅ `mcp__supabase__get_advisors({type:"security"})` reports neither
+`anon_security_definer_function_executable` nor
+`authenticated_security_definer_function_executable`, and `function_search_path_mutable`
+is clear. Only `auth_leaked_password_protection` remains, which does not apply to a
+magic-link-only app.
 
 **Verify:**
 ```sql
-select p.proname, pg_get_userbyid(ac.grantee) as grantee, ac.privilege_type
+select p.proname,
+       coalesce(nullif(pg_get_userbyid(ac.grantee), ''), 'PUBLIC') as grantee,
+       ac.grantee as grantee_oid,
+       ac.privilege_type
 from pg_proc p, aclexplode(p.proacl) ac
 where p.pronamespace = 'public'::regnamespace
-  and pg_get_userbyid(ac.grantee) in ('anon','authenticated');
--- expect: zero rows
+  and p.proname in ('resolve_game','close_week','handle_new_user','rls_auto_enable')
+  and (ac.grantee = 0 or pg_get_userbyid(ac.grantee) in ('anon','authenticated'));
+-- expect: zero rows (grantee 0 is PUBLIC)
 ```
 
 ---
