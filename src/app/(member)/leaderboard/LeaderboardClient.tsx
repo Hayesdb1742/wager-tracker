@@ -74,7 +74,26 @@ export function LeaderboardClient({
   const [loadingWeek, setLoadingWeek] = useState(false);
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
 
-  // Realtime: update scores live when resolve_game fires (open week only)
+  const fetchWeek = useCallback(async (weekId: number) => {
+    setLoadingWeek(true);
+    try {
+      const res = await fetch(`/api/leaderboard/week/${weekId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setScores(data.scores);
+      setGames(data.games);
+      setPicks(data.picks);
+    } finally {
+      setLoadingWeek(false);
+    }
+  }, []);
+
+  // Realtime: update scores live when resolve_game fires (open week only).
+  // selectedWeekId must stay in the dependency list -- without it the handler
+  // keeps the value from the render that opened the channel, which is always
+  // the open week (page.tsx defaults to it), so the guard below reads true
+  // forever and a member browsing a past week gets their view replaced by the
+  // open week's data.
   useEffect(() => {
     if (!openWeekId) return;
 
@@ -92,22 +111,7 @@ export function LeaderboardClient({
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openWeekId]);
-
-  const fetchWeek = useCallback(async (weekId: number) => {
-    setLoadingWeek(true);
-    try {
-      const res = await fetch(`/api/leaderboard/week/${weekId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setScores(data.scores);
-      setGames(data.games);
-      setPicks(data.picks);
-    } finally {
-      setLoadingWeek(false);
-    }
-  }, []);
+  }, [openWeekId, selectedWeekId, fetchWeek]);
 
   const handleWeekChange = useCallback(async (weekId: number) => {
     setSelectedWeekId(weekId);
