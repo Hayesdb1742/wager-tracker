@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { selectedTeam, pickRecord, winPct } from "@/lib/wagers";
+import { selectedTeam, pickRecord, lockRecord, winPct } from "@/lib/wagers";
 
 type AllTimeStat = {
   member_id: string;
@@ -13,6 +13,9 @@ type AllTimeStat = {
   losses: number;
   pushes: number;
   win_pct: number;
+  lock_wins: number;
+  lock_losses: number;
+  lock_pushes: number;
 };
 
 type TeamTendency = {
@@ -52,6 +55,9 @@ export default async function AnalyticsPage() {
       losses: 0,
       pushes: 0,
       win_pct: 0,
+      lock_wins: 0,
+      lock_losses: 0,
+      lock_pushes: 0,
     });
   }
 
@@ -90,6 +96,14 @@ export default async function AnalyticsPage() {
     stat.wins = wins;
     stat.losses = losses;
     stat.pushes = pushes;
+
+    // The lock column keeps its own scale -- LOTY at 3x a LOTW, not the 2-and-7 the league
+    // record now reads in -- because a year-end prize rides on this number. See
+    // LOCK_PRIZE_WEIGHT.
+    const locks = lockRecord(memberPicks);
+    stat.lock_wins = locks.wins;
+    stat.lock_losses = locks.losses;
+    stat.lock_pushes = locks.pushes;
   }
 
   for (const stat of statsMap.values()) {
@@ -147,6 +161,7 @@ export default async function AnalyticsPage() {
                     <th className="px-4 py-2 text-center">Seasons</th>
                     <th className="px-4 py-2 text-center">Weeks</th>
                     <th className="px-4 py-2 text-center">W-L-P</th>
+                    <th className="px-4 py-2 text-center">LOTW</th>
                     <th className="px-4 py-2 text-center">Win %</th>
                     <th className="px-4 py-2 text-right">Total Pts</th>
                   </tr>
@@ -166,6 +181,13 @@ export default async function AnalyticsPage() {
                       <td className="px-4 py-3 text-center text-slate-300">{s.weeks_played}</td>
                       <td className="px-4 py-3 text-center text-slate-300 tabular-nums">
                         {s.wins}–{s.losses}{s.pushes > 0 ? `–${s.pushes}` : ""}
+                      </td>
+                      <td className="px-4 py-3 text-center text-slate-300 tabular-nums">
+                        {s.lock_wins + s.lock_losses + s.lock_pushes === 0 ? (
+                          <span className="text-slate-500">—</span>
+                        ) : (
+                          <>{s.lock_wins}–{s.lock_losses}{s.lock_pushes > 0 ? `–${s.lock_pushes}` : ""}</>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`font-medium tabular-nums ${s.win_pct >= 60 ? "text-emerald-400" : s.win_pct >= 50 ? "text-slate-100" : "text-red-400"}`}>

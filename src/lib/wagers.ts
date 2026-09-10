@@ -306,3 +306,37 @@ export function formatRecord(record: LeagueRecord): string {
   const base = `${record.wins}–${record.losses}`;
   return record.pushes > 0 ? `${base}–${record.pushes}` : base;
 }
+
+/**
+ * The lock record's own scale -- NOT LOCK_MULTIPLIER, on purpose.
+ *
+ * This one is a season-long prize: the league hands something out at the end of the year
+ * for it, and they weight a LOTY at 3x a LOTW for that purpose. It is deliberately not the
+ * 2-and-7 the league record reads in, because it is not measuring the same thing -- it asks
+ * how a member did on the locks they spent, on a scale the prize was agreed in.
+ *
+ * If someone later "fixes" this to LOCK_MULTIPLIER, the prize changes. Don't.
+ */
+export const LOCK_PRIZE_WEIGHT: Record<LockLevel, number> = { NONE: 0, LOTW: 1, LOTY: 3 };
+
+/**
+ * Tally only the picks that carried a lock, on the prize scale above. Unlike `pickRecord`,
+ * a push is weighted too, so all three numbers stay on one scale.
+ *
+ * Shared so the all-time standings column and the member's own Locks card cannot disagree
+ * about a number a prize rides on.
+ */
+export function lockRecord(picks: readonly ScoredPick[]): LeagueRecord {
+  const record: LeagueRecord = { wins: 0, losses: 0, pushes: 0 };
+
+  for (const pick of picks) {
+    if (pick.points === null || pick.points === undefined) continue;
+    const weight = LOCK_PRIZE_WEIGHT[lockLevel(pick)];
+    if (weight === 0) continue;
+    if (pick.points > 0) record.wins += weight;
+    else if (pick.points < 0) record.losses += weight;
+    else record.pushes += weight;
+  }
+
+  return record;
+}

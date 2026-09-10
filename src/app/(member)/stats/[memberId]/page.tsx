@@ -8,6 +8,7 @@ import {
   formatWager,
   formatMatchup,
   pickRecord,
+  lockRecord,
   formatRecord,
   winPct,
   lockLevel,
@@ -72,14 +73,14 @@ export default async function MemberStatsPage({
   const record = pickRecord(resolvedPicks);
   const win_pct = winPct(record);
 
-  // The lock record is the opposite: one row per lock spent, because "5-3 on my locks" is a
-  // count of locks. Weighting it would just double every number on the card.
-  const lotwPicks = resolvedPicks.filter((p) => p.is_lotw);
-  const lotw_wins = lotwPicks.filter((p) => p.points !== null && (p.points as number) > 0).length;
-  const lotw_losses = lotwPicks.filter((p) => p.points !== null && (p.points as number) < 0).length;
-  const lotw_pushes = lotwPicks.filter((p) => p.points === 0).length;
-  const lotw_decided = lotw_wins + lotw_losses;
-  const lotw_win_pct = lotw_decided > 0 ? Math.round((lotw_wins / lotw_decided) * 100) : 0;
+  // The lock record runs on its own scale -- LOTY at 3x a LOTW -- because a year-end prize
+  // rides on it. Same helper the all-time standings column uses, so the two cannot disagree
+  // about a number someone wins something for. See LOCK_PRIZE_WEIGHT.
+  const lockRec = lockRecord(resolvedPicks);
+  const lotw_wins = lockRec.wins;
+  const lotw_losses = lockRec.losses;
+  const lotw_pushes = lockRec.pushes;
+  const lotw_win_pct = winPct(lockRec);
 
   const closedScores = (weeklyScores ?? []).filter(
     (ws) => ws.weeks?.status === "CLOSED"
