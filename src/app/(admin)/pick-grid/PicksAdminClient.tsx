@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   BET_TYPES, BET_TYPE_LABELS, SELECTIONS_FOR, formatWager, formatWagerShort,
-  formatLine, wagerResult, GRADE_LABELS, validateWager,
+  formatLine, wagerResult, GRADE_LABELS, validateWager, LOCK_MULTIPLIER,
   type BetType, type Selection,
 } from "@/lib/wagers";
 
@@ -192,7 +192,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
 
   const pickLabel = (pick: PickRow | undefined, game: Game) => {
     if (!pick) return "—";
-    // ★★ is a LOTY: the week's lock at triple weight, spent once a season.
+    // ★★ is a LOTY: the week's lock at seven points and seven games, spent once a season.
     const lotw = pick.is_loty ? " ★★" : pick.is_lotw ? " ★" : "";
     const override = pick.overridden_by ? " ●" : "";
     const grade = wagerResult(pick.points, game.status);
@@ -359,7 +359,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
 
               {/* Legend */}
               <p className="text-xs text-slate-400 mt-2">
-                ★ = LOTW · ★★ = LOTY (×3) · ● = Admin override · Click any cell to override or assign LOTW
+                ★ = LOTW (×{LOCK_MULTIPLIER.LOTW}) · ★★ = LOTY (×{LOCK_MULTIPLIER.LOTY}) · ● = Admin override · Click any cell to override or assign LOTW
               </p>
 
               {/* Active cell action panel */}

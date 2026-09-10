@@ -6,7 +6,7 @@ A private web app for a friend group's weekly football betting league. Members s
 
 ## What It Does
 
-- **Pick Entry** — Members pick a team for each game from the weekly pool. One pick per week must be designated as the Lock of the Week (LOTW), worth double points.
+- **Pick Entry** — Members pick a team for each game from the weekly pool. One pick per week must be designated as the Lock of the Week (LOTW), worth double. Once a season, a member may raise that week's lock to the Lock of the Year (LOTY), worth seven.
 - **Live Leaderboard** — Standings update in real time as the admin enters game results on Sunday. Picks stay hidden from other members until each game kicks off.
 - **Season Tracking** — Cumulative points tracked across the full season. Historical analytics show win rates, team tendencies, and head-to-head records.
 - **Admin Tools** — One admin manages weekly setup, enters game results, and can override picks or assign LOTWs when needed.
@@ -15,11 +15,17 @@ A private web app for a friend group's weekly football betting league. Members s
 
 ## Scoring
 
-| Result | Regular Pick | Lock of the Week |
-|--------|-------------|-----------------|
-| Win    | +1          | +2              |
-| Push   | 0           | 0               |
-| Loss   | −1          | −2              |
+A lock's weight is its weight **in games as well as in points** — the league reads the record, not the point total, so a lock has to show up in the W‑L.
+
+| Result | Regular Pick | Lock of the Week | Lock of the Year |
+|--------|-------------|------------------|------------------|
+| Win    | +1 · 1 W    | +2 · 2 W         | +7 · 7 W         |
+| Push   | 0 · 1 P     | 0 · 1 P          | 0 · 1 P          |
+| Loss   | −1 · 1 L    | −2 · 2 L         | −7 · 7 L         |
+
+So a member who goes 2–3 on the week with the LOTW among the losses reads **2–4**; with the LOTY among them, **2–9**. A push is a no‑action and stays one row however it was locked.
+
+**One lock per week, one LOTY per season.** A LOTY stands in place of that week's LOTW rather than sitting beside it — spend it in week 4 and you have no separate LOTW that week.
 
 **Forfeit penalty:** −1 point per pick slot not filled by week close (e.g., if 10 picks are required and you submit 8, you lose 2 points).
 

@@ -196,8 +196,15 @@ export const LOCK_LABELS: Record<LockLevel, string> = {
 
 export const LOCK_SHORT: Record<LockLevel, string> = { NONE: "", LOTW: "LOTW", LOTY: "LOTY" };
 
-/** Matches the grading weights in resolve_game. */
-export const LOCK_MULTIPLIER: Record<LockLevel, number> = { NONE: 1, LOTW: 2, LOTY: 3 };
+/**
+ * What a lock is worth -- in points AND in games.
+ *
+ * The league voted on the second half of that: a lock does not just swing the points, it
+ * swings the record. A lost LOTW is two losses, not one, so 2-3 on the week with the lock
+ * down reads 2-4; a lost LOTY reads 2-9. One number drives both, so the record can never
+ * drift from the score. Matches the grading weights in resolve_game.
+ */
+export const LOCK_MULTIPLIER: Record<LockLevel, number> = { NONE: 1, LOTW: 2, LOTY: 7 };
 
 export function lockLevel(pick: { is_lotw?: boolean | null; is_loty?: boolean | null }): LockLevel {
   if (pick.is_loty) return "LOTY";
@@ -238,4 +245,64 @@ export function lockUpgradeError(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------- records
+
+/**
+ * A won-lost-pushed record, counted in games rather than in picks.
+ *
+ * The distinction only matters because of locks. The league's ruling is that the W-L
+ * record, not the point total, is how a week reads -- so a lock has to show up in it. A
+ * pick counts for `LOCK_MULTIPLIER[level]` games on whichever side it landed: a plain pick
+ * is one, a LOTW two, a LOTY seven. Two wins and three losses with the LOTW among the
+ * losses is 2-4; with the LOTY among them, 2-9.
+ *
+ * A push is a no-action, so it stays one row however it was locked -- there is nothing to
+ * double when nothing was won or lost.
+ */
+export type LeagueRecord = { wins: number; losses: number; pushes: number };
+
+export type ScoredPick = {
+  points: number | null;
+  is_lotw?: boolean | null;
+  is_loty?: boolean | null;
+};
+
+/**
+ * Tally picks into a record. Ungraded picks (`points` null) sit out.
+ *
+ * Every record on the site runs through here. Four screens used to each write their own
+ * `.filter((p) => p.points > 0).length`, which is exactly the shape that cannot represent a
+ * lock -- one pick, one game, no weight.
+ */
+export function pickRecord(picks: readonly ScoredPick[]): LeagueRecord {
+  const record: LeagueRecord = { wins: 0, losses: 0, pushes: 0 };
+
+  for (const pick of picks) {
+    if (pick.points === null || pick.points === undefined) continue;
+    const games = LOCK_MULTIPLIER[lockLevel(pick)];
+    if (pick.points > 0) record.wins += games;
+    else if (pick.points < 0) record.losses += games;
+    else record.pushes += 1;
+  }
+
+  return record;
+}
+
+/** Decided games -- the denominator for a win rate. Pushes are not decided. */
+export function decidedGames(record: LeagueRecord): number {
+  return record.wins + record.losses;
+}
+
+/** Win rate over decided games, as a whole percent. 0 when nothing is decided. */
+export function winPct(record: LeagueRecord): number {
+  const decided = decidedGames(record);
+  return decided > 0 ? Math.round((record.wins / decided) * 100) : 0;
+}
+
+/** "2–4", or "2–4–1" when there are pushes to show. */
+export function formatRecord(record: LeagueRecord): string {
+  const base = `${record.wins}–${record.losses}`;
+  return record.pushes > 0 ? `${base}–${record.pushes}` : base;
 }

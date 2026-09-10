@@ -3,7 +3,16 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { StatsClient } from "./StatsClient";
-import { selectedTeam, formatWager, formatMatchup } from "@/lib/wagers";
+import {
+  selectedTeam,
+  formatWager,
+  formatMatchup,
+  pickRecord,
+  formatRecord,
+  winPct,
+  lockLevel,
+  LOCK_SHORT,
+} from "@/lib/wagers";
 
 export default async function MemberStatsPage({
   params,
@@ -36,7 +45,7 @@ export default async function MemberStatsPage({
   // This member's picks (resolved games only)
   const { data: picks } = await admin
     .from("picks")
-    .select("id, game_id, bet_type, selection, line, odds, is_lotw, points, games(home_team, away_team, winner, status, kickoff_time, sport)")
+    .select("id, game_id, bet_type, selection, line, odds, is_lotw, is_loty, points, games(home_team, away_team, winner, status, kickoff_time, sport)")
     .eq("member_id", memberId)
     .not("points", "is", null)
     .order("games(kickoff_time)", { ascending: true });
@@ -58,12 +67,13 @@ export default async function MemberStatsPage({
 
   const resolvedPicks = picks ?? [];
 
-  const wins = resolvedPicks.filter((p) => p.points !== null && (p.points as number) > 0).length;
-  const losses = resolvedPicks.filter((p) => p.points !== null && (p.points as number) < 0).length;
-  const pushes = resolvedPicks.filter((p) => p.points === 0).length;
-  const decided = wins + losses;
-  const win_pct = decided > 0 ? Math.round((wins / decided) * 100) : 0;
+  // The headline record is counted in games, so a lost LOTW shows as two losses and a lost
+  // LOTY as seven -- the league reads the record, not the point total.
+  const record = pickRecord(resolvedPicks);
+  const win_pct = winPct(record);
 
+  // The lock record is the opposite: one row per lock spent, because "5-3 on my locks" is a
+  // count of locks. Weighting it would just double every number on the card.
   const lotwPicks = resolvedPicks.filter((p) => p.is_lotw);
   const lotw_wins = lotwPicks.filter((p) => p.points !== null && (p.points as number) > 0).length;
   const lotw_losses = lotwPicks.filter((p) => p.points !== null && (p.points as number) < 0).length;
@@ -107,7 +117,9 @@ export default async function MemberStatsPage({
     } else break;
   }
 
-  // Team tendencies
+  // Team tendencies. Counted per pick, not per game: the question here is "how often am I
+  // right about Michigan", which a lock does not make more or less true. It also keeps the
+  // row's W-L-P adding up to its own Picks column.
   const teamMap = new Map<string, { team: string; picks: number; wins: number; losses: number; pushes: number }>();
   for (const p of resolvedPicks) {
     const game = p.games;
@@ -165,6 +177,7 @@ export default async function MemberStatsPage({
         picked: wager,
         kickoff_time: game?.kickoff_time ?? "",
         result: won ? "W" : lost ? "L" : "P",
+        lock: LOCK_SHORT[lockLevel(p)],
         points: p.points,
       };
     });
@@ -189,9 +202,9 @@ export default async function MemberStatsPage({
 
       {/* Overview cards */}
       <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4">
-        <StatCard label="W-L-P" value={`${wins}–${losses}${pushes > 0 ? `–${pushes}` : ""}`} />
+        <StatCard label="W-L-P" value={formatRecord(record)} />
         <StatCard label="Win %" value={`${win_pct}%`} highlight={win_pct >= 60 ? "green" : win_pct < 45 ? "red" : undefined} />
-        <StatCard label="LOTW" value={`${lotw_wins}–${lotw_losses}`} sub={`${lotw_win_pct}% win rate`} />
+        <StatCard label="Locks" value={`${lotw_wins}–${lotw_losses}`} sub={`${lotw_win_pct}% win rate`} />
         <StatCard
           label="Current streak"
           value={currentStreak === 0 ? "—" : `${Math.abs(currentStreak)}${currentStreak > 0 ? "W" : "L"}`}
@@ -242,7 +255,7 @@ export default async function MemberStatsPage({
       {lotwHistory.length > 0 && (
         <section className="mb-8">
           <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">
-            Recent LOTW Picks ({lotw_wins}W–{lotw_losses}L{lotw_pushes > 0 ? `–${lotw_pushes}P` : ""} · {lotw_win_pct}%)
+            Recent Locks ({lotw_wins}W–{lotw_losses}L{lotw_pushes > 0 ? `–${lotw_pushes}P` : ""} · {lotw_win_pct}%)
           </h2>
           <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
             {lotwHistory.map((h) => (
@@ -253,7 +266,7 @@ export default async function MemberStatsPage({
                   "bg-slate-700 text-slate-200 ring-1 ring-slate-600"
                 }`}>{h.result}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-white truncate">{h.picked} (LOTW)</div>
+                  <div className="text-sm font-semibold text-white truncate">{h.picked} ({h.lock})</div>
                   <div className="text-xs text-slate-400 truncate">{h.matchup}</div>
                 </div>
                 <div className={`text-sm font-medium tabular-nums shrink-0 ${

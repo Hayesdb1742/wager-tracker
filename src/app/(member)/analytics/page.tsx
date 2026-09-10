@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { selectedTeam } from "@/lib/wagers";
+import { selectedTeam, pickRecord, winPct } from "@/lib/wagers";
 
 type AllTimeStat = {
   member_id: string;
@@ -30,7 +30,7 @@ export default async function AnalyticsPage() {
   const [profilesRes, scoresRes, picksRes, seasonsRes] = await Promise.all([
     admin.from("profiles").select("id, display_name").eq("is_active", true),
     admin.from("weekly_scores").select("member_id, total, week_id, weeks(season_id, status)"),
-    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, points, games(home_team, away_team, winner, status)").not("points", "is", null),
+    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, is_loty, points, games(home_team, away_team, winner, status)").not("points", "is", null),
     admin.from("seasons").select("id, name, year").order("year", { ascending: false }),
   ]);
 
@@ -72,27 +72,36 @@ export default async function AnalyticsPage() {
     if (stat) stat.seasons_played = seasonSet.size;
   }
 
+  // All-time record, counted in games: a LOTW is two of them and a LOTY seven, so a member
+  // who leaned on their locks and missed carries it in the W-L, not just in the points.
+  const picksByMember = new Map<string, typeof picks>();
   for (const pick of picks) {
-    const stat = statsMap.get(pick.member_id);
+    const list = picksByMember.get(pick.member_id);
+    if (list) list.push(pick);
+    else picksByMember.set(pick.member_id, [pick]);
+  }
+
+  for (const [memberId, memberPicks] of picksByMember) {
+    const stat = statsMap.get(memberId);
     if (!stat) continue;
-    stat.total_picks += 1;
-    if (pick.points !== null) {
-      if (pick.points > 0) stat.wins += 1;
-      else if (pick.points < 0) stat.losses += 1;
-      else stat.pushes += 1;
-    }
+    // total_picks stays a count of picks -- it answers "how many bets", not "how many games".
+    stat.total_picks = memberPicks.length;
+    const { wins, losses, pushes } = pickRecord(memberPicks);
+    stat.wins = wins;
+    stat.losses = losses;
+    stat.pushes = pushes;
   }
 
   for (const stat of statsMap.values()) {
-    const decided = stat.wins + stat.losses;
-    stat.win_pct = decided > 0 ? Math.round((stat.wins / decided) * 100) : 0;
+    stat.win_pct = winPct(stat);
   }
 
   const standings = Array.from(statsMap.values())
     .filter((s) => s.weeks_played > 0)
     .sort((a, b) => b.all_time_total - a.all_time_total || a.display_name.localeCompare(b.display_name));
 
-  // League-wide team tendencies
+  // League-wide team tendencies. Per pick, not per game -- see the member stats page: this
+  // measures how often the league is right about a team, which a lock does not change.
   const teamMap = new Map<string, TeamTendency>();
   for (const pick of picks) {
     const game = pick.games;

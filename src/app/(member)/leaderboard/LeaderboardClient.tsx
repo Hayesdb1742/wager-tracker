@@ -2,7 +2,16 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { formatWager, wagerResult, lockLevel, GRADE_LABELS, LOCK_SHORT } from "@/lib/wagers";
+import {
+  formatWager,
+  wagerResult,
+  lockLevel,
+  pickRecord,
+  GRADE_LABELS,
+  LOCK_SHORT,
+  LOCK_MULTIPLIER,
+  type LockLevel,
+} from "@/lib/wagers";
 
 type Week = { id: number; week_number: number; status: string };
 
@@ -134,14 +143,15 @@ export function LeaderboardClient({
 
   const gamesById = Object.fromEntries(games.map((g) => [g.id, g]));
 
-  // Wins/losses/pushes from picks
+  // The week's record, counted in games rather than picks: the lock is worth two of them,
+  // the LOTY seven. Plus the lock this member spent, for the badge.
   const resultCounts = (memberId: string) => {
     const mp = picksByMember(memberId);
-    const wins = mp.filter((p) => p.points !== null && p.points > 0).length;
-    const losses = mp.filter((p) => p.points !== null && p.points < 0).length;
-    const pushes = mp.filter((p) => p.points === 0).length;
-    const hasLotw = mp.some((p) => p.is_lotw);
-    return { wins, losses, pushes, hasLotw };
+    const lock = mp.reduce<LockLevel>((highest, p) => {
+      const level = lockLevel(p);
+      return LOCK_MULTIPLIER[level] > LOCK_MULTIPLIER[highest] ? level : highest;
+    }, "NONE");
+    return { record: pickRecord(mp), lock };
   };
 
   const rankedScores = [...scores].sort(
@@ -201,7 +211,7 @@ export function LeaderboardClient({
           ) : (
             <div className="space-y-2">
               {rankedScores.map((member, idx) => {
-                const { wins, losses, pushes, hasLotw } = resultCounts(member.member_id);
+                const { record, lock } = resultCounts(member.member_id);
                 const isExpanded = expandedMember === member.member_id;
                 const memberPicks = picksByMember(member.member_id);
 
@@ -227,15 +237,19 @@ export function LeaderboardClient({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-white truncate">{member.display_name}</span>
-                            {hasLotw && (
-                              <span className="text-xs bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40 px-1.5 py-0.5 rounded font-semibold shrink-0">
-                                LOTW
+                            {lock !== "NONE" && (
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-semibold shrink-0 ${
+                                lock === "LOTY"
+                                  ? "bg-fuchsia-500/20 text-fuchsia-300 ring-1 ring-fuchsia-500/40"
+                                  : "bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40"
+                              }`}>
+                                {LOCK_SHORT[lock]}
                               </span>
                             )}
                           </div>
-                          {(wins > 0 || losses > 0 || pushes > 0) && (
+                          {(record.wins > 0 || record.losses > 0 || record.pushes > 0) && (
                             <div className="text-xs font-medium text-slate-400 mt-0.5">
-                              {wins}W–{losses}L{pushes > 0 ? `–${pushes}P` : ""}
+                              {record.wins}W–{record.losses}L{record.pushes > 0 ? `–${record.pushes}P` : ""}
                             </div>
                           )}
                         </div>
