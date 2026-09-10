@@ -165,23 +165,23 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Week {week.week_number} Picks</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <p className="text-sm text-slate-400 mt-0.5">
             Closes {new Date(week.closes_at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
           </p>
         </div>
         <div className="text-right">
-          <div className={`text-2xl font-bold tabular-nums ${pickCount >= week.required_picks ? "text-green-600" : "text-gray-800"}`}>
+          <div className={`text-2xl font-bold tabular-nums ${pickCount >= week.required_picks ? "text-emerald-400" : "text-white"}`}>
             {pickCount} / {week.required_picks}
           </div>
-          <div className="text-xs text-gray-400">picks made</div>
-          <div className={`text-xs mt-1 ${lotwPick ? "text-green-600" : "text-amber-600"}`}>
+          <div className="text-xs font-medium text-slate-400">picks made</div>
+          <div className={`text-xs font-semibold mt-1 ${lotwPick ? "text-emerald-400" : "text-amber-400"}`}>
             {lotwPick ? "🔒 LOTW set" : "⚠ No LOTW"}
           </div>
         </div>
       </div>
 
       {pickCount < week.required_picks && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+        <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/40 rounded-lg text-sm text-amber-200">
           You need {week.required_picks - pickCount} more pick{week.required_picks - pickCount !== 1 ? "s" : ""} to avoid forfeit penalties.
         </div>
       )}
@@ -189,7 +189,7 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
       {[{ label: "NFL", list: nflGames }, { label: "College Football", list: cfbGames }].map(({ label, list }) =>
         list.length === 0 ? null : (
           <div key={label} className="mb-6">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">{label}</h2>
+            <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-2">{label}</h2>
             <div className="space-y-2">
               {list.map((game) => (
                 <GameCard
@@ -262,16 +262,18 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
   const showScores = game.status === "FINAL";
 
   return (
-    <div className={`bg-white border rounded-xl p-4 transition-opacity ${locked ? "opacity-75" : ""}`}>
+    <div className={`bg-slate-900 border border-slate-700 rounded-xl p-4 shadow-lg shadow-black/30 transition-opacity ${locked ? "opacity-60" : ""}`}>
       <div className="flex items-center justify-between mb-3">
-        <div className="text-xs text-gray-400">
+        <div className="text-xs text-slate-400">
           {new Date(game.kickoff_time).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
           {" · "}
           {new Date(game.kickoff_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
         {locked && (
           <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-            game.status === "FINAL" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+            game.status === "FINAL"
+              ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+              : "bg-slate-800 text-slate-300 ring-1 ring-slate-600"
           }`}>
             {game.status === "FINAL" ? "Final" : "Locked"}
           </span>
@@ -280,10 +282,10 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
           <button
             onClick={() => onLotw(game.id)}
             disabled={isLotwSaving || locked}
-            className={`text-xs px-2 py-0.5 rounded font-medium border transition-colors ${
+            className={`text-xs px-2.5 py-1 rounded-md font-semibold border transition-colors ${
               pick.is_lotw
-                ? "bg-amber-500 text-white border-amber-500"
-                : "text-amber-600 border-amber-300 hover:bg-amber-50"
+                ? "bg-amber-400 text-slate-950 border-amber-400 shadow-md shadow-amber-500/30"
+                : "text-amber-300 bg-amber-500/10 border-amber-500/60 hover:bg-amber-500/25 hover:text-amber-200"
             }`}
           >
             {isLotwSaving ? "…" : pick.is_lotw ? "🔒 LOTW" : "Set as LOTW"}
@@ -294,12 +296,12 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
       {/* Matchup line, with scores once the game is final */}
       <div className="flex items-baseline justify-between gap-2 mb-3 text-sm">
         <span className="truncate">
-          <span className="text-gray-800">{game.away_team}</span>
-          <span className="text-gray-300"> at </span>
-          <span className="text-gray-800">{game.home_team}</span>
+          <span className="font-medium text-white">{game.away_team}</span>
+          <span className="text-slate-500"> at </span>
+          <span className="font-medium text-white">{game.home_team}</span>
         </span>
         {showScores && game.away_score !== null && game.home_score !== null && (
-          <span className="tabular-nums text-gray-500 shrink-0">
+          <span className="tabular-nums font-semibold text-slate-200 shrink-0">
             {game.away_score}–{game.home_score}
           </span>
         )}
@@ -308,24 +310,26 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
       {locked ? (
         <div className="text-sm">
           {pick ? (
-            <span className="font-medium text-gray-800">
+            <span className="font-semibold text-white">
               {formatWager(pick, game, true)}
-              {pick.is_lotw && <span className="ml-1.5 text-xs text-amber-600">LOTW</span>}
+              {pick.is_lotw && <span className="ml-1.5 text-xs font-semibold text-amber-400">LOTW</span>}
             </span>
           ) : (
-            <span className="text-gray-400">No pick</span>
+            <span className="text-slate-400">No pick</span>
           )}
         </div>
       ) : (
         <div className="space-y-2">
           {/* Bet type */}
-          <div className="inline-flex rounded-lg border border-gray-200 p-0.5">
+          <div className="inline-flex rounded-lg border border-slate-700 bg-slate-800/70 p-0.5">
             {BET_TYPES.map((bt) => (
               <button
                 key={bt}
                 onClick={() => changeBetType(bt)}
-                className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-                  betType === bt ? "bg-blue-500 text-white" : "text-gray-500 hover:text-gray-800"
+                className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-colors ${
+                  betType === bt
+                    ? "bg-sky-500 text-slate-950 shadow-md shadow-sky-500/30"
+                    : "text-slate-300 hover:bg-slate-700 hover:text-white"
                 }`}
               >
                 {BET_TYPE_LABELS[bt]}
@@ -347,10 +351,10 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
                   key={side}
                   onClick={() => setSelection(side)}
                   disabled={isSaving}
-                  className={`py-2.5 px-3 rounded-lg border-2 text-sm font-medium text-left transition-all truncate ${
+                  className={`py-2.5 px-3 rounded-lg border-2 text-sm font-semibold text-left transition-all truncate ${
                     selected
-                      ? "border-blue-500 bg-blue-50 text-blue-700"
-                      : "border-gray-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer"
+                      ? "border-sky-400 bg-sky-500/25 text-sky-100 shadow-lg shadow-sky-500/20"
+                      : "border-slate-700 bg-slate-800 text-slate-100 hover:border-sky-400 hover:bg-sky-500/15 hover:text-white cursor-pointer"
                   }`}
                 >
                   {label}
@@ -363,7 +367,7 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
           <div className="flex gap-2">
             {betType !== "ML" && (
               <label className="flex-1">
-                <span className="block text-xs text-gray-400 mb-0.5">
+                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-300 mb-1">
                   {betType === "TOTAL" ? "Total" : "Spread"}
                 </span>
                 <input
@@ -372,19 +376,19 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
                   value={lineText}
                   onChange={(e) => setLineText(e.target.value)}
                   placeholder={betType === "TOTAL" ? "52.5" : "-3.5"}
-                  className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-sm tabular-nums focus:border-blue-400 focus:outline-none"
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-600 bg-slate-800 text-sm text-white tabular-nums focus:border-sky-400 focus:outline-none"
                 />
               </label>
             )}
             <label className="flex-1">
-              <span className="block text-xs text-gray-400 mb-0.5">Price (optional)</span>
+              <span className="block text-xs font-semibold uppercase tracking-wide text-slate-300 mb-1">Optional</span>
               <input
                 type="text"
                 inputMode="numeric"
                 value={oddsText}
                 onChange={(e) => setOddsText(e.target.value)}
                 placeholder="-110"
-                className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 text-sm tabular-nums focus:border-blue-400 focus:outline-none"
+                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-600 bg-slate-800 text-sm text-white tabular-nums focus:border-sky-400 focus:outline-none"
               />
             </label>
           </div>
@@ -392,9 +396,9 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
           {/* What will be saved */}
           <div className="text-xs">
             {draft ? (
-              <span className="text-blue-600">✓ {formatWager(draft, game, true)}</span>
+              <span className="font-semibold text-sky-300">✓ {formatWager(draft, game, true)}</span>
             ) : (
-              <span className="text-gray-400">
+              <span className="text-slate-400">
                 {!selection
                   ? "Pick a side"
                   : betType === "TOTAL"
@@ -405,7 +409,7 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
               </span>
             )}
             {pick?.overridden_by && (
-              <span className="ml-2 text-orange-500">
+              <span className="ml-2 text-orange-400">
                 Modified by admin{pick.overridden_at ? ` · ${new Date(pick.overridden_at).toLocaleDateString([], { month: "short", day: "numeric" })}` : ""}
               </span>
             )}
@@ -413,8 +417,8 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
         </div>
       )}
 
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      {isSaving && <p className="mt-2 text-xs text-gray-400">Saving…</p>}
+      {error && <p className="mt-2 text-xs font-medium text-red-400">{error}</p>}
+      {isSaving && <p className="mt-2 text-xs text-slate-400">Saving…</p>}
     </div>
   );
 }

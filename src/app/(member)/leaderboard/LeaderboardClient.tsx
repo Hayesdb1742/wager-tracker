@@ -152,13 +152,15 @@ export function LeaderboardClient({
       {/* Header + tabs */}
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-2xl font-bold">Leaderboard</h1>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
           {(["weekly", "season"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${
-                tab === t ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-700"
+              className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-colors capitalize ${
+                tab === t
+                  ? "bg-sky-500 text-slate-950 shadow-md shadow-sky-500/30"
+                  : "text-slate-300 hover:bg-slate-700 hover:text-white"
               }`}
             >
               {t}
@@ -174,7 +176,7 @@ export function LeaderboardClient({
             <select
               value={selectedWeekId ?? ""}
               onChange={(e) => handleWeekChange(Number(e.target.value))}
-              className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
+              className="text-sm font-medium border border-slate-600 rounded-lg px-3 py-1.5 bg-slate-800 text-white hover:border-slate-500 focus:border-sky-400 focus:outline-none"
             >
               {weeks.map((w) => (
                 <option key={w.id} value={w.id}>
@@ -184,15 +186,15 @@ export function LeaderboardClient({
               ))}
             </select>
             {selectedWeek?.status === "OPEN" && (
-              <span className="text-xs text-green-600 font-medium">
+              <span className="text-xs text-emerald-400 font-semibold">
                 Live — updates in real time
               </span>
             )}
-            {loadingWeek && <span className="text-xs text-gray-400">Loading…</span>}
+            {loadingWeek && <span className="text-xs text-slate-400">Loading…</span>}
           </div>
 
           {rankedScores.length === 0 ? (
-            <div className="text-center py-16 text-gray-400 text-sm">
+            <div className="text-center py-16 text-slate-400 text-sm">
               No scores yet for this week.
             </div>
           ) : (
@@ -203,19 +205,19 @@ export function LeaderboardClient({
                 const memberPicks = picksByMember(member.member_id);
 
                 return (
-                  <div key={member.member_id} className="bg-white border rounded-xl overflow-hidden">
+                  <div key={member.member_id} className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-lg shadow-black/30">
                     {/* Score row */}
                     <button
-                      className="w-full text-left"
+                      className="w-full text-left transition-colors hover:bg-slate-800/70"
                       onClick={() => setExpandedMember(isExpanded ? null : member.member_id)}
                     >
                       <div className="flex items-center gap-3 px-4 py-3">
                         {/* Rank */}
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                          idx === 0 ? "bg-amber-400 text-white" :
-                          idx === 1 ? "bg-gray-300 text-gray-700" :
-                          idx === 2 ? "bg-amber-700 text-white" :
-                          "bg-gray-100 text-gray-500"
+                          idx === 0 ? "bg-amber-400 text-slate-950 shadow-md shadow-amber-500/30" :
+                          idx === 1 ? "bg-slate-300 text-slate-900" :
+                          idx === 2 ? "bg-amber-700 text-amber-50" :
+                          "bg-slate-800 text-slate-300 ring-1 ring-slate-600"
                         }`}>
                           {idx + 1}
                         </div>
@@ -223,15 +225,15 @@ export function LeaderboardClient({
                         {/* Name + badges */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-gray-900 truncate">{member.display_name}</span>
+                            <span className="font-semibold text-white truncate">{member.display_name}</span>
                             {hasLotw && (
-                              <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium shrink-0">
+                              <span className="text-xs bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40 px-1.5 py-0.5 rounded font-semibold shrink-0">
                                 LOTW
                               </span>
                             )}
                           </div>
                           {(wins > 0 || losses > 0 || pushes > 0) && (
-                            <div className="text-xs text-gray-400 mt-0.5">
+                            <div className="text-xs font-medium text-slate-400 mt-0.5">
                               {wins}W–{losses}L{pushes > 0 ? `–${pushes}P` : ""}
                             </div>
                           )}
@@ -239,11 +241,11 @@ export function LeaderboardClient({
 
                         {/* Score breakdown + total */}
                         <div className="text-right shrink-0">
-                          <div className="text-xl font-bold tabular-nums text-gray-900">
+                          <div className="text-xl font-bold tabular-nums text-white">
                             {member.total > 0 ? `+${member.total}` : member.total}
                           </div>
                           {(member.forfeit_penalty < 0 || member.lotw_penalty < 0) && (
-                            <div className="text-xs text-red-500 tabular-nums">
+                            <div className="text-xs font-medium text-red-400 tabular-nums">
                               {member.forfeit_penalty < 0 && `${member.forfeit_penalty} forfeit`}
                               {member.forfeit_penalty < 0 && member.lotw_penalty < 0 && " · "}
                               {member.lotw_penalty < 0 && `${member.lotw_penalty} LOTW`}
@@ -251,15 +253,15 @@ export function LeaderboardClient({
                           )}
                         </div>
 
-                        <div className="text-gray-300 text-xs ml-1">{isExpanded ? "▲" : "▼"}</div>
+                        <div className="text-slate-500 text-xs ml-1">{isExpanded ? "▲" : "▼"}</div>
                       </div>
                     </button>
 
                     {/* Expanded: per-game results */}
                     {isExpanded && (
-                      <div className="border-t border-gray-100 px-4 py-3 bg-gray-50 space-y-2">
+                      <div className="border-t border-slate-700 px-4 py-3 bg-slate-950/60 space-y-2">
                         {games.length === 0 && (
-                          <p className="text-xs text-gray-400">No games for this week.</p>
+                          <p className="text-xs text-slate-400">No games for this week.</p>
                         )}
                         {games.map((game) => {
                           const pick = memberPicks.find((p) => p.game_id === game.id);
@@ -274,49 +276,49 @@ export function LeaderboardClient({
                             <div key={game.id} className="flex items-center gap-2 text-sm">
                               {/* Result indicator */}
                               <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                grade === "WIN" ? "bg-green-100 text-green-600" :
-                                grade === "LOSS" ? "bg-red-100 text-red-500" :
-                                grade === "PENDING" ? "bg-blue-100 text-blue-400" :
-                                grade === "PUSH" || grade === "VOID" ? "bg-gray-100 text-gray-500" :
-                                "bg-gray-100 text-gray-300"
+                                grade === "WIN" ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40" :
+                                grade === "LOSS" ? "bg-red-500/20 text-red-300 ring-1 ring-red-500/40" :
+                                grade === "PENDING" ? "bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40" :
+                                grade === "PUSH" || grade === "VOID" ? "bg-slate-700 text-slate-200" :
+                                "bg-slate-800 text-slate-500 ring-1 ring-slate-700"
                               }`}>
                                 {grade === null ? "·" : grade === "PENDING" ? "?" : GRADE_LABELS[grade]}
                               </div>
 
                               {/* Matchup */}
                               <div className="flex-1 min-w-0">
-                                <span className="text-gray-500">{game.sport}</span>
+                                <span className="text-slate-300">{game.sport}</span>
                                 {" · "}
-                                <span className="text-gray-500">
+                                <span className="text-slate-300">
                                   {game.away_team}
                                   {game.status === "FINAL" && game.away_score !== null && (
                                     <span className="tabular-nums"> {game.away_score}</span>
                                   )}
                                 </span>
-                                <span className="text-gray-300"> @ </span>
-                                <span className="text-gray-500">
+                                <span className="text-slate-500"> @ </span>
+                                <span className="text-slate-300">
                                   {game.home_team}
                                   {game.status === "FINAL" && game.home_score !== null && (
                                     <span className="tabular-nums"> {game.home_score}</span>
                                   )}
                                 </span>
                                 {revealed && (
-                                  <span className="ml-1.5 font-semibold text-gray-900">
+                                  <span className="ml-1.5 font-bold text-white">
                                     {formatWager(revealed, game, true)}
                                   </span>
                                 )}
                                 {revealed?.is_lotw && (
-                                  <span className="ml-1.5 text-xs text-amber-600 font-medium">LOTW</span>
+                                  <span className="ml-1.5 text-xs text-amber-400 font-semibold">LOTW</span>
                                 )}
                               </div>
 
                               {/* Points */}
                               <div className={`text-xs font-medium tabular-nums shrink-0 ${
-                                !revealed ? "text-gray-300" :
-                                grade === "PENDING" ? "text-blue-400" :
-                                grade === "WIN" ? "text-green-600" :
-                                grade === "LOSS" ? "text-red-500" :
-                                "text-gray-400"
+                                !revealed ? "text-slate-500" :
+                                grade === "PENDING" ? "text-sky-400" :
+                                grade === "WIN" ? "text-emerald-400" :
+                                grade === "LOSS" ? "text-red-400" :
+                                "text-slate-400"
                               }`}>
                                 {!revealed ? (locked ? "–" : "open") :
                                   grade === "PENDING" ? "live" :
@@ -332,7 +334,7 @@ export function LeaderboardClient({
 
                         {/* Penalty detail */}
                         {(member.forfeit_penalty < 0 || member.lotw_penalty < 0) && (
-                          <div className="pt-1 border-t border-gray-200 text-xs text-red-500 space-y-0.5">
+                          <div className="pt-1 border-t border-slate-700 text-xs font-medium text-red-400 space-y-0.5">
                             {member.forfeit_penalty < 0 && (
                               <div>Forfeit penalty: {member.forfeit_penalty} pts</div>
                             )}
@@ -354,19 +356,19 @@ export function LeaderboardClient({
       {tab === "season" && (
         <div>
           {closedWeekIds.length === 0 ? (
-            <div className="text-center py-16 text-gray-400 text-sm">
+            <div className="text-center py-16 text-slate-400 text-sm">
               No closed weeks yet — season standings appear after the first week closes.
             </div>
           ) : (
             <>
               {openWeekId && (
-                <p className="text-xs text-gray-400 mb-3">
+                <p className="text-xs text-slate-400 mb-3">
                   Week {weeks.find((w) => w.id === openWeekId)?.week_number} (in progress) not included.
                 </p>
               )}
-              <div className="bg-white border rounded-xl overflow-hidden">
+              <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-lg shadow-black/30">
                 {/* Table header */}
-                <div className="grid text-xs font-medium text-gray-400 uppercase tracking-wide px-4 py-2 border-b border-gray-100"
+                <div className="grid text-xs font-bold text-slate-300 uppercase tracking-wide px-4 py-2.5 bg-slate-800 border-b border-slate-700"
                   style={{ gridTemplateColumns: `2rem 1fr ${closedWeekIds.map(() => "3rem").join(" ")} 4rem` }}>
                   <div>#</div>
                   <div>Member</div>
@@ -382,35 +384,35 @@ export function LeaderboardClient({
                 {seasonStandings.map((entry, idx) => (
                   <div
                     key={entry.member_id}
-                    className="grid items-center px-4 py-2.5 border-b border-gray-50 last:border-0"
+                    className="grid items-center px-4 py-2.5 border-b border-slate-800 last:border-0"
                     style={{ gridTemplateColumns: `2rem 1fr ${closedWeekIds.map(() => "3rem").join(" ")} 4rem` }}
                   >
                     <div className={`text-sm font-bold ${
-                      idx === 0 ? "text-amber-500" :
-                      idx === 1 ? "text-gray-400" :
-                      idx === 2 ? "text-amber-700" :
-                      "text-gray-300"
+                      idx === 0 ? "text-amber-400" :
+                      idx === 1 ? "text-slate-300" :
+                      idx === 2 ? "text-orange-400" :
+                      "text-slate-400"
                     }`}>
                       {idx + 1}
                     </div>
-                    <div className="font-medium text-gray-900 text-sm truncate">{entry.display_name}</div>
+                    <div className="font-semibold text-white text-sm truncate">{entry.display_name}</div>
                     {closedWeekIds.map((wid) => {
                       const wTotal = entry.weeks[wid] ?? null;
                       return (
                         <div key={wid} className={`text-center text-sm tabular-nums ${
-                          wTotal === null ? "text-gray-200" :
-                          wTotal > 0 ? "text-green-600" :
-                          wTotal < 0 ? "text-red-500" :
-                          "text-gray-400"
+                          wTotal === null ? "text-slate-600" :
+                          wTotal > 0 ? "font-semibold text-emerald-400" :
+                          wTotal < 0 ? "font-semibold text-red-400" :
+                          "text-slate-400"
                         }`}>
                           {wTotal === null ? "–" : wTotal > 0 ? `+${wTotal}` : wTotal}
                         </div>
                       );
                     })}
                     <div className={`text-right font-bold text-sm tabular-nums ${
-                      entry.season_total > 0 ? "text-gray-900" :
-                      entry.season_total < 0 ? "text-red-500" :
-                      "text-gray-400"
+                      entry.season_total > 0 ? "text-white" :
+                      entry.season_total < 0 ? "text-red-400" :
+                      "text-slate-400"
                     }`}>
                       {entry.season_total > 0 ? `+${entry.season_total}` : entry.season_total}
                     </div>

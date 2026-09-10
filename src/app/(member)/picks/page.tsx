@@ -29,7 +29,7 @@ export default async function PicksPage() {
     return (
       <div className="text-center py-16">
         <h1 className="text-xl font-semibold mb-2">No active week</h1>
-        <p className="text-gray-500 text-sm">Picks aren&apos;t open yet. Check back soon.</p>
+        <p className="text-slate-300 text-sm">Picks aren&apos;t open yet. Check back soon.</p>
       </div>
     );
   }

@@ -124,15 +124,15 @@ export default async function AnalyticsPage() {
 
       {/* All-time standings */}
       <section className="mb-8">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">All-Time Standings</h2>
+        <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">All-Time Standings</h2>
         {standings.length === 0 ? (
-          <p className="text-sm text-gray-400">No closed weeks yet.</p>
+          <p className="text-sm text-slate-400">No closed weeks yet.</p>
         ) : (
-          <div className="bg-white border rounded-xl overflow-hidden">
+          <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-max">
                 <thead>
-                  <tr className="border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                  <tr className="border-b border-slate-700 bg-slate-800 text-xs font-bold text-slate-300 uppercase tracking-wide">
                     <th className="px-4 py-2 text-left w-8">#</th>
                     <th className="px-4 py-2 text-left">Member</th>
                     <th className="px-4 py-2 text-center">Seasons</th>
@@ -144,27 +144,27 @@ export default async function AnalyticsPage() {
                 </thead>
                 <tbody>
                   {standings.map((s, idx) => (
-                    <tr key={s.member_id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                    <tr key={s.member_id} className="border-b border-slate-800 last:border-0 hover:bg-slate-800/70">
                       <td className={`px-4 py-3 font-bold text-sm ${
-                        idx === 0 ? "text-amber-500" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-amber-700" : "text-gray-300"
+                        idx === 0 ? "text-amber-400" : idx === 1 ? "text-slate-300" : idx === 2 ? "text-orange-400" : "text-slate-400"
                       }`}>{idx + 1}</td>
                       <td className="px-4 py-3">
-                        <Link href={`/stats/${s.member_id}`} className="font-semibold text-gray-900 hover:text-blue-600 transition-colors">
+                        <Link href={`/stats/${s.member_id}`} className="font-semibold text-white underline-offset-4 hover:text-sky-300 hover:underline transition-colors">
                           {s.display_name}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-center text-gray-600">{s.seasons_played}</td>
-                      <td className="px-4 py-3 text-center text-gray-600">{s.weeks_played}</td>
-                      <td className="px-4 py-3 text-center text-gray-600 tabular-nums">
+                      <td className="px-4 py-3 text-center text-slate-300">{s.seasons_played}</td>
+                      <td className="px-4 py-3 text-center text-slate-300">{s.weeks_played}</td>
+                      <td className="px-4 py-3 text-center text-slate-300 tabular-nums">
                         {s.wins}–{s.losses}{s.pushes > 0 ? `–${s.pushes}` : ""}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`font-medium tabular-nums ${s.win_pct >= 60 ? "text-green-600" : s.win_pct >= 50 ? "text-gray-700" : "text-red-500"}`}>
+                        <span className={`font-medium tabular-nums ${s.win_pct >= 60 ? "text-emerald-400" : s.win_pct >= 50 ? "text-slate-100" : "text-red-400"}`}>
                           {s.win_pct}%
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right font-bold tabular-nums">
-                        <span className={s.all_time_total > 0 ? "text-gray-900" : "text-red-500"}>
+                        <span className={s.all_time_total > 0 ? "text-white" : "text-red-400"}>
                           {s.all_time_total > 0 ? `+${s.all_time_total}` : s.all_time_total}
                         </span>
                       </td>
@@ -179,14 +179,14 @@ export default async function AnalyticsPage() {
 
       {/* League-wide team tendencies */}
       <section>
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Most-Picked Teams (League)</h2>
+        <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Most-Picked Teams (League)</h2>
         {teamTendencies.length === 0 ? (
-          <p className="text-sm text-gray-400">No resolved games yet.</p>
+          <p className="text-sm text-slate-400">No resolved games yet.</p>
         ) : (
-          <div className="bg-white border rounded-xl overflow-hidden">
+          <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                <tr className="border-b border-slate-700 bg-slate-800 text-xs font-bold text-slate-300 uppercase tracking-wide">
                   <th className="px-4 py-2 text-left">Team</th>
                   <th className="px-4 py-2 text-center">Picks</th>
                   <th className="px-4 py-2 text-center">W-L-P</th>
@@ -195,14 +195,14 @@ export default async function AnalyticsPage() {
               </thead>
               <tbody>
                 {teamTendencies.map((t) => (
-                  <tr key={t.team} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{t.team}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-600">{t.picks}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-600 tabular-nums">
+                  <tr key={t.team} className="border-b border-slate-800 last:border-0 hover:bg-slate-800/70">
+                    <td className="px-4 py-2.5 font-semibold text-white">{t.team}</td>
+                    <td className="px-4 py-2.5 text-center text-slate-300">{t.picks}</td>
+                    <td className="px-4 py-2.5 text-center text-slate-300 tabular-nums">
                       {t.wins}–{t.losses}{t.pushes > 0 ? `–${t.pushes}` : ""}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className={`font-medium tabular-nums ${t.win_pct >= 60 ? "text-green-600" : t.win_pct >= 50 ? "text-gray-700" : "text-red-500"}`}>
+                      <span className={`font-medium tabular-nums ${t.win_pct >= 60 ? "text-emerald-400" : t.win_pct >= 50 ? "text-slate-100" : "text-red-400"}`}>
                         {t.win_pct}%
                       </span>
                     </td>

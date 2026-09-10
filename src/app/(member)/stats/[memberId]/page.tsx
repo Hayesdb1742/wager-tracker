@@ -181,11 +181,11 @@ export default async function MemberStatsPage({
     <div>
       {/* Back link */}
       <div className="mb-4">
-        <Link href="/analytics" className="text-sm text-gray-400 hover:text-gray-600">← All-Time Standings</Link>
+        <Link href="/analytics" className="text-sm font-medium text-slate-300 transition-colors hover:text-white">← All-Time Standings</Link>
       </div>
 
       <h1 className="text-2xl font-bold mb-1">{profile.display_name}</h1>
-      <p className="text-sm text-gray-400 mb-6">Member stats</p>
+      <p className="text-sm text-slate-400 mb-6">Member stats</p>
 
       {/* Overview cards */}
       <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4">
@@ -207,25 +207,25 @@ export default async function MemberStatsPage({
       {/* Season breakdown */}
       {seasons.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Season Breakdown</h2>
+          <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Season Breakdown</h2>
           <div className="space-y-2">
             {seasons.map((sg) => (
-              <div key={sg.season_id} className="bg-white border rounded-xl px-4 py-3">
+              <div key={sg.season_id} className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl px-4 py-3">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-semibold text-gray-900">{sg.season_name}</span>
-                  <span className={`font-bold tabular-nums ${sg.season_total > 0 ? "text-gray-900" : "text-red-500"}`}>
+                  <span className="font-bold text-white">{sg.season_name}</span>
+                  <span className={`font-bold tabular-nums ${sg.season_total > 0 ? "text-white" : "text-red-400"}`}>
                     {sg.season_total > 0 ? `+${sg.season_total}` : sg.season_total} pts
                   </span>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   {sg.weeks.sort((a, b) => a.week_number - b.week_number).map((w) => (
                     <div key={w.week_number} className="text-center">
-                      <div className="text-xs text-gray-400">Wk {w.week_number}</div>
+                      <div className="text-xs font-medium text-slate-400">Wk {w.week_number}</div>
                       <div className={`text-sm font-medium tabular-nums ${
-                        w.status !== "CLOSED" ? "text-blue-400" :
-                        w.total > 0 ? "text-green-600" :
-                        w.total < 0 ? "text-red-500" :
-                        "text-gray-400"
+                        w.status !== "CLOSED" ? "text-sky-400" :
+                        w.total > 0 ? "text-emerald-400" :
+                        w.total < 0 ? "text-red-400" :
+                        "text-slate-300"
                       }`}>
                         {w.status !== "CLOSED" ? "…" : w.total > 0 ? `+${w.total}` : w.total}
                       </div>
@@ -241,23 +241,23 @@ export default async function MemberStatsPage({
       {/* LOTW history */}
       {lotwHistory.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+          <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">
             Recent LOTW Picks ({lotw_wins}W–{lotw_losses}L{lotw_pushes > 0 ? `–${lotw_pushes}P` : ""} · {lotw_win_pct}%)
           </h2>
-          <div className="bg-white border rounded-xl overflow-hidden">
+          <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
             {lotwHistory.map((h) => (
-              <div key={h.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-50 last:border-0">
+              <div key={h.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-800 last:border-0">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                  h.result === "W" ? "bg-green-100 text-green-600" :
-                  h.result === "L" ? "bg-red-100 text-red-500" :
-                  "bg-gray-100 text-gray-400"
+                  h.result === "W" ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40" :
+                  h.result === "L" ? "bg-red-500/20 text-red-300 ring-1 ring-red-500/40" :
+                  "bg-slate-700 text-slate-200 ring-1 ring-slate-600"
                 }`}>{h.result}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-gray-900 truncate">{h.picked} (LOTW)</div>
-                  <div className="text-xs text-gray-400 truncate">{h.matchup}</div>
+                  <div className="text-sm font-semibold text-white truncate">{h.picked} (LOTW)</div>
+                  <div className="text-xs text-slate-400 truncate">{h.matchup}</div>
                 </div>
                 <div className={`text-sm font-medium tabular-nums shrink-0 ${
-                  h.result === "W" ? "text-green-600" : h.result === "L" ? "text-red-500" : "text-gray-400"
+                  h.result === "W" ? "text-emerald-400" : h.result === "L" ? "text-red-400" : "text-slate-400"
                 }`}>
                   {h.points !== null && (h.points as number) > 0 ? `+${h.points}` : h.points}
                 </div>
@@ -270,11 +270,11 @@ export default async function MemberStatsPage({
       {/* Team tendencies */}
       {teamTendencies.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Team Tendencies</h2>
-          <div className="bg-white border rounded-xl overflow-hidden">
+          <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Team Tendencies</h2>
+          <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                <tr className="border-b border-slate-700 bg-slate-800 text-xs font-bold text-slate-300 uppercase tracking-wide">
                   <th className="px-4 py-2 text-left">Team</th>
                   <th className="px-4 py-2 text-center">Picks</th>
                   <th className="px-4 py-2 text-center">W-L-P</th>
@@ -283,14 +283,14 @@ export default async function MemberStatsPage({
               </thead>
               <tbody>
                 {teamTendencies.slice(0, 10).map((t) => (
-                  <tr key={t.team} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{t.team}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-600">{t.picks}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-600 tabular-nums">
+                  <tr key={t.team} className="border-b border-slate-800 last:border-0">
+                    <td className="px-4 py-2.5 font-semibold text-white">{t.team}</td>
+                    <td className="px-4 py-2.5 text-center text-slate-300">{t.picks}</td>
+                    <td className="px-4 py-2.5 text-center text-slate-300 tabular-nums">
                       {t.wins}–{t.losses}{t.pushes > 0 ? `–${t.pushes}` : ""}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className={`font-medium ${t.win_pct >= 60 ? "text-green-600" : t.win_pct >= 50 ? "text-gray-700" : "text-red-500"}`}>
+                      <span className={`font-medium ${t.win_pct >= 60 ? "text-emerald-400" : t.win_pct >= 50 ? "text-slate-100" : "text-red-400"}`}>
                         {t.win_pct}%
                       </span>
                     </td>
@@ -318,14 +318,14 @@ export default async function MemberStatsPage({
 
 function StatCard({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: "green" | "red" }) {
   return (
-    <div className="bg-white border rounded-xl px-4 py-3">
-      <div className="text-xs text-gray-400 mb-1">{label}</div>
+    <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl px-4 py-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">{label}</div>
       <div className={`text-xl font-bold tabular-nums ${
-        highlight === "green" ? "text-green-600" :
-        highlight === "red" ? "text-red-500" :
-        "text-gray-900"
+        highlight === "green" ? "text-emerald-400" :
+        highlight === "red" ? "text-red-400" :
+        "text-white"
       }`}>{value}</div>
-      {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
+      {sub && <div className="text-xs font-medium text-slate-400 mt-0.5">{sub}</div>}
     </div>
   );
 }

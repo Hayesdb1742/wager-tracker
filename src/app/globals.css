@@ -1,26 +1,71 @@
 @import "tailwindcss";
 
+/*
+ * The pool runs one dark theme. The old auto light/dark scheme left most of the
+ * copy grey-on-white, which was unreadable on a phone in daylight -- so the
+ * palette below is the only one, and it is tuned for contrast, not subtlety.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  --background: #060910;  /* page */
+  --surface: #101725;     /* cards, nav, modals */
+  --surface-raised: #1b2436;  /* inputs, table headers, hover */
+  --foreground: #f1f5f9;
+  --border: #3a4761;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  /*
+   * Tailwind v4 leaves a bare `border` / `divide-y` at currentColor, so every
+   * card outline and row divider took the colour of whatever text sat next to
+   * it. Pin them to the palette instead.
+   */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
+
+  /* Form controls default to a white field, which blows out a dark page. */
+  input,
+  select,
+  textarea {
+    background-color: var(--surface-raised);
+    color: var(--foreground);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #7b8aa5;
+  }
+
+  /* Native dropdowns render their list with the element's own colours. */
+  select option {
+    background-color: var(--surface-raised);
+    color: var(--foreground);
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+  }
 }
