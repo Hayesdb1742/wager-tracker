@@ -9,6 +9,14 @@ PORT ?= 3000
 PROJECT_REF := ehjowxwewpyqcevfaqse
 REQUIRED_ENV := NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY SUPABASE_SERVICE_ROLE_KEY CFBD_API_KEY CRON_SECRET
 
+# The Supabase CLI reads SUPABASE_DB_PASSWORD from the environment. On a machine
+# that has already run `db-link` the CLI has the credential cached and never
+# asks, but after a fresh clone it stops to prompt -- which strands the db
+# targets mid-run in a script or an agent session. Exporting .env.local first
+# costs nothing when the credential is cached. Kept out of REQUIRED_ENV on
+# purpose: dev, build and typecheck have no use for a database password.
+LOAD_ENV := set -a; [ -f .env.local ] && . ./.env.local; set +a;
+
 .DEFAULT_GOAL := help
 .PHONY: help install dev kill login env check typecheck lint build clean \
         db-link db-status db-push db-types schedules sync
@@ -55,16 +63,16 @@ clean: ## Drop build caches
 	rm -rf .next tsconfig.tsbuildinfo
 
 db-link: ## Re-link the Supabase CLI after a fresh clone
-	supabase link --project-ref $(PROJECT_REF)
+	@$(LOAD_ENV) supabase link --project-ref $(PROJECT_REF)
 
 db-status: ## Compare local migrations against the live database
-	supabase migration list
+	@$(LOAD_ENV) supabase migration list
 
 db-push: ## Apply pending migrations to the LIVE database
-	supabase db push
+	@$(LOAD_ENV) supabase db push
 
 db-types: ## Regenerate src/types/database.ts from the live schema
-	supabase gen types typescript --linked > src/types/database.ts
+	@$(LOAD_ENV) supabase gen types typescript --linked > src/types/database.ts
 
 schedules: env ## Re-run the 2026 season bootstrap (WRITES TO LIVE DB — read the script header)
 	npx tsx scripts/gather-2026-schedules.ts
