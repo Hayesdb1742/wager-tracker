@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { selectedTeam } from "@/lib/wagers";
+import { lockLevel, selectedTeam } from "@/lib/wagers";
 
 type AllTimeStat = {
   member_id: string;
@@ -13,6 +13,9 @@ type AllTimeStat = {
   losses: number;
   pushes: number;
   win_pct: number;
+  lock_wins: number;
+  lock_losses: number;
+  lock_pushes: number;
 };
 
 type TeamTendency = {
@@ -30,7 +33,7 @@ export default async function AnalyticsPage() {
   const [profilesRes, scoresRes, picksRes, seasonsRes] = await Promise.all([
     admin.from("profiles").select("id, display_name").eq("is_active", true),
     admin.from("weekly_scores").select("member_id, total, week_id, weeks(season_id, status)"),
-    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, points, games(home_team, away_team, winner, status)").not("points", "is", null),
+    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, is_loty, points, games(home_team, away_team, winner, status)").not("points", "is", null),
     admin.from("seasons").select("id, name, year").order("year", { ascending: false }),
   ]);
 
@@ -52,6 +55,9 @@ export default async function AnalyticsPage() {
       losses: 0,
       pushes: 0,
       win_pct: 0,
+      lock_wins: 0,
+      lock_losses: 0,
+      lock_pushes: 0,
     });
   }
 
@@ -80,6 +86,17 @@ export default async function AnalyticsPage() {
       if (pick.points > 0) stat.wins += 1;
       else if (pick.points < 0) stat.losses += 1;
       else stat.pushes += 1;
+
+      // The lock record is a weighted tally rather than a count of games: the season's one
+      // LOTY lands as three, every other lock as one. Deliberately not LOCK_MULTIPLIER --
+      // that mirrors the +/-2 a LOTW grades at, which is not the weight this record reads in.
+      const level = lockLevel(pick);
+      if (level !== "NONE") {
+        const weight = level === "LOTY" ? 3 : 1;
+        if (pick.points > 0) stat.lock_wins += weight;
+        else if (pick.points < 0) stat.lock_losses += weight;
+        else stat.lock_pushes += weight;
+      }
     }
   }
 
@@ -138,6 +155,7 @@ export default async function AnalyticsPage() {
                     <th className="px-4 py-2 text-center">Seasons</th>
                     <th className="px-4 py-2 text-center">Weeks</th>
                     <th className="px-4 py-2 text-center">W-L-P</th>
+                    <th className="px-4 py-2 text-center">LOTW</th>
                     <th className="px-4 py-2 text-center">Win %</th>
                     <th className="px-4 py-2 text-right">Total Pts</th>
                   </tr>
@@ -157,6 +175,13 @@ export default async function AnalyticsPage() {
                       <td className="px-4 py-3 text-center text-slate-300">{s.weeks_played}</td>
                       <td className="px-4 py-3 text-center text-slate-300 tabular-nums">
                         {s.wins}–{s.losses}{s.pushes > 0 ? `–${s.pushes}` : ""}
+                      </td>
+                      <td className="px-4 py-3 text-center text-slate-300 tabular-nums">
+                        {s.lock_wins + s.lock_losses + s.lock_pushes === 0 ? (
+                          <span className="text-slate-500">—</span>
+                        ) : (
+                          <>{s.lock_wins}–{s.lock_losses}{s.lock_pushes > 0 ? `–${s.lock_pushes}` : ""}</>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`font-medium tabular-nums ${s.win_pct >= 60 ? "text-emerald-400" : s.win_pct >= 50 ? "text-slate-100" : "text-red-400"}`}>
