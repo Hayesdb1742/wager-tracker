@@ -11,7 +11,7 @@ import {
 type Week = { id: number; week_number: number; status: string; required_picks: number };
 type Game = { id: string; sport: string; home_team: string; away_team: string; kickoff_time: string; status: string; winner: string | null };
 type Member = { id: string; display_name: string };
-type PickRow = { id: string; member_id: string; game_id: string; bet_type: string; selection: string; line: number; odds: number | null; is_lotw: boolean; points: number | null; overridden_by: string | null; overridden_at: string | null };
+type PickRow = { id: string; member_id: string; game_id: string; bet_type: string; selection: string; line: number; odds: number | null; is_lotw: boolean; is_loty: boolean; points: number | null; overridden_by: string | null; overridden_at: string | null };
 type AuditEntry = {
   id: string; pick_id: string;
   previous_bet_type: string; previous_selection: string; previous_line: number;
@@ -118,6 +118,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
           line: wager.line,
           odds: wager.odds,
           is_lotw: existing?.is_lotw ?? false,
+          is_loty: existing?.is_loty ?? false,
           points: existing?.points ?? null,
           overridden_by: "admin",
           overridden_at: new Date().toISOString(),
@@ -157,7 +158,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
       // Clear previous LOTW for this member
       if (next[memberId]) {
         for (const gid of Object.keys(next[memberId])) {
-          next[memberId] = { ...next[memberId], [gid]: { ...next[memberId][gid], is_lotw: false } };
+          next[memberId] = { ...next[memberId], [gid]: { ...next[memberId][gid], is_lotw: false, is_loty: false } };
         }
         // Set new LOTW — find the pick by ID
         for (const gid of Object.keys(next[memberId])) {
@@ -191,7 +192,8 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
 
   const pickLabel = (pick: PickRow | undefined, game: Game) => {
     if (!pick) return "—";
-    const lotw = pick.is_lotw ? " ★" : "";
+    // ★★ is a LOTY: the week's lock at triple weight, spent once a season.
+    const lotw = pick.is_loty ? " ★★" : pick.is_lotw ? " ★" : "";
     const override = pick.overridden_by ? " ●" : "";
     const grade = wagerResult(pick.points, game.status);
     const suffix = grade === "PENDING" ? "" : ` ${GRADE_LABELS[grade]}`;
@@ -336,7 +338,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
                               <td key={game.id} className="px-1 py-1 text-center">
                                 <button
                                   onClick={() => isActive ? setActiveCell(null) : openCell(member.id, game.id)}
-                                  title={pick ? `${formatWager(pick, game, true)}${pick.is_lotw ? " (LOTW)" : ""}${pick.overridden_by ? " (overridden)" : ""}` : "No pick"}
+                                  title={pick ? `${formatWager(pick, game, true)}${pick.is_loty ? " (LOTY)" : pick.is_lotw ? " (LOTW)" : ""}${pick.overridden_by ? " (overridden)" : ""}` : "No pick"}
                                   className={`w-full px-1 py-1.5 rounded text-xs font-semibold transition-colors ${
                                     isActive
                                       ? "bg-sky-500/25 ring-2 ring-sky-400"
@@ -357,7 +359,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
 
               {/* Legend */}
               <p className="text-xs text-slate-400 mt-2">
-                ★ = LOTW · ● = Admin override · Click any cell to override or assign LOTW
+                ★ = LOTW · ★★ = LOTY (×3) · ● = Admin override · Click any cell to override or assign LOTW
               </p>
 
               {/* Active cell action panel */}

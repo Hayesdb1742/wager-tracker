@@ -176,3 +176,66 @@ export function validateWager(input: {
 
   return null;
 }
+
+// ---------------------------------------------------------------- locks
+
+/**
+ * The lock a pick carries, and the weight it grades at.
+ *
+ * A LOTY stands in place of that week's LOTW, so a pick holding one carries `is_lotw` too
+ * (picks_loty_implies_lotw) -- read the level with `lockLevel`, never `is_lotw` alone, or a
+ * LOTY reads as a plain LOTW.
+ */
+export type LockLevel = "NONE" | "LOTW" | "LOTY";
+
+export const LOCK_LABELS: Record<LockLevel, string> = {
+  NONE: "",
+  LOTW: "Lock of the Week",
+  LOTY: "Lock of the Year",
+};
+
+export const LOCK_SHORT: Record<LockLevel, string> = { NONE: "", LOTW: "LOTW", LOTY: "LOTY" };
+
+/** Matches the grading weights in resolve_game. */
+export const LOCK_MULTIPLIER: Record<LockLevel, number> = { NONE: 1, LOTW: 2, LOTY: 3 };
+
+export function lockLevel(pick: { is_lotw?: boolean | null; is_loty?: boolean | null }): LockLevel {
+  if (pick.is_loty) return "LOTY";
+  if (pick.is_lotw) return "LOTW";
+  return "NONE";
+}
+
+/**
+ * Whether a submitted pick may be raised to `level`. Returns a message the member can read,
+ * or null when the upgrade is allowed.
+ *
+ * A lock is an upgrade, never a move: NONE -> LOTW -> LOTY, one way, and only onto a pick
+ * that is already in. LOTW needs the week's lock unspent. LOTY needs the season's LOTY
+ * unspent plus either the week's lock unspent or this very pick already holding it -- the
+ * LOTY takes the LOTW's place rather than sitting beside it.
+ *
+ * Shared because /api/picks/lock enforces this and the pick screen has to grey out the same
+ * buttons for the same reasons.
+ */
+export function lockUpgradeError(
+  level: LockLevel,
+  ctx: { current: LockLevel; weekLockOnAnotherPick: boolean; lotyUsedThisSeason: boolean }
+): string | null {
+  if (level === "NONE") return "A lock cannot be taken back off a pick.";
+
+  if (LOCK_MULTIPLIER[level] <= LOCK_MULTIPLIER[ctx.current]) {
+    return ctx.current === level
+      ? `This pick is already your ${LOCK_LABELS[level]}.`
+      : `This pick is already your ${LOCK_LABELS[ctx.current]}, which outranks a ${LOCK_SHORT[level]}.`;
+  }
+
+  if (ctx.weekLockOnAnotherPick) {
+    return "You have already locked another game this week.";
+  }
+
+  if (level === "LOTY" && ctx.lotyUsedThisSeason) {
+    return "You have already used your Lock of the Year this season.";
+  }
+
+  return null;
+}

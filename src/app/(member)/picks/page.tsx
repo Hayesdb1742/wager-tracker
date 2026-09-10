@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveSeasonId } from "@/lib/seasons";
+import { formatMatchup } from "@/lib/wagers";
 import { PicksClient } from "./PicksClient";
 import { redirect } from "next/navigation";
 
@@ -49,9 +50,29 @@ export default async function PicksPage() {
     .eq("member_id", user.id)
     .eq("week_id", week.id);
 
+  // The Lock of the Year is spent once per SEASON, so the answer cannot come from this
+  // week's picks alone -- it reaches the season through weeks.
+  const { data: lotyPicks } = await admin
+    .from("picks")
+    .select("game_id, week_id, weeks!inner(season_id, week_number), games(home_team, away_team)")
+    .eq("member_id", user.id)
+    .eq("is_loty", true)
+    .eq("weeks.season_id", week.season_id)
+    .limit(1);
+
+  const spentLoty = lotyPicks?.[0];
+  const lotyUsed = spentLoty
+    ? {
+        week_number: spentLoty.weeks.week_number,
+        matchup: spentLoty.games
+          ? formatMatchup(spentLoty.games)
+          : null,
+      }
+    : null;
+
   const pickMap: Record<string, {
     id: string; bet_type: string; selection: string; line: number; odds: number | null;
-    is_lotw: boolean; overridden_by: string | null; overridden_at: string | null;
+    is_lotw: boolean; is_loty: boolean; overridden_by: string | null; overridden_at: string | null;
   }> = {};
   for (const p of existingPicks ?? []) {
     pickMap[p.game_id] = {
@@ -61,6 +82,7 @@ export default async function PicksPage() {
       line: p.line,
       odds: p.odds,
       is_lotw: p.is_lotw,
+      is_loty: p.is_loty,
       overridden_by: p.overridden_by,
       overridden_at: p.overridden_at,
     };
@@ -71,6 +93,7 @@ export default async function PicksPage() {
       week={week}
       games={games ?? []}
       initialPickMap={pickMap}
+      lotyUsed={lotyUsed}
       memberId={user.id}
     />
   );

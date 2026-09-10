@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { formatWager, wagerResult, GRADE_LABELS } from "@/lib/wagers";
+import { formatWager, wagerResult, lockLevel, GRADE_LABELS, LOCK_SHORT } from "@/lib/wagers";
 
 type Week = { id: number; week_number: number; status: string };
 
@@ -35,6 +35,7 @@ type PickInfo = {
   line: number;
   odds: number | null;
   is_lotw: boolean;
+  is_loty: boolean;
   points: number | null;
 };
 
@@ -308,7 +309,9 @@ export function LeaderboardClient({
                                   </span>
                                 )}
                                 {revealed?.is_lotw && (
-                                  <span className="ml-1.5 text-xs text-amber-400 font-semibold">LOTW</span>
+                                  <span className={`ml-1.5 text-xs font-semibold ${revealed.is_loty ? "text-fuchsia-300" : "text-amber-400"}`}>
+                                    {LOCK_SHORT[lockLevel(revealed)]}
+                                  </span>
                                 )}
                               </div>
 

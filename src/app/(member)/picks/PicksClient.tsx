@@ -1,12 +1,17 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   BET_TYPES,
   BET_TYPE_LABELS,
   SELECTIONS_FOR,
+  LOCK_MULTIPLIER,
+  LOCK_SHORT,
   formatWager,
+  lockLevel,
+  lockUpgradeError,
   type BetType,
+  type LockLevel,
   type Selection,
 } from "@/lib/wagers";
 
@@ -23,27 +28,27 @@ type PickInfo = {
   line: number;
   odds: number | null;
   is_lotw: boolean;
+  is_loty: boolean;
   overridden_by: string | null;
   overridden_at: string | null;
 };
 
 type Draft = { bet_type: BetType; selection: Selection; line: number; odds: number | null };
 
+/** Where an earlier week's Lock of the Year went, when one has already been spent. */
+type LotyUsed = { week_number: number; matchup: string | null } | null;
+
 interface Props {
   week: Week;
   games: Game[];
   initialPickMap: Record<string, PickInfo>;
+  lotyUsed: LotyUsed;
   memberId: string;
-}
-
-/** Identity of a wager, so a save only fires when something actually changed. */
-function signature(w: { bet_type: string; selection: string; line: number; odds: number | null }) {
-  return `${w.bet_type}|${w.selection}|${w.line}|${w.odds ?? ""}`;
 }
 
 /**
  * Parse a line the member is still typing. Returns null for anything incomplete — a lone
- * "-", a trailing "3." — so a half-typed number is never persisted.
+ * "-", a trailing "3." — so a half-typed number can never be submitted.
  */
 function parseLine(text: string): number | null {
   const t = text.trim();
@@ -89,17 +94,28 @@ function buildDraft(
   return { bet_type: betType, selection, line, odds: odds.value };
 }
 
-export function PicksClient({ week, games, initialPickMap }: Props) {
+export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
   const [picks, setPicks] = useState(initialPickMap);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const isLocked = (game: Game) => new Date(game.kickoff_time) <= new Date();
+  const isKickedOff = (game: Game) => new Date(game.kickoff_time) <= new Date();
   const pickCount = Object.keys(picks).length;
-  const lotwPick = Object.values(picks).find((p) => p.is_lotw);
 
-  const savePick = useCallback(async (gameId: string, wager: Draft) => {
-    setSaving(gameId);
+  // The week's lock, and whether the season's single LOTY is still in hand. A LOTY spent in
+  // an earlier week arrives on props; one spent in this week is in `picks`.
+  const weekLock = useMemo(() => {
+    for (const [gameId, pick] of Object.entries(picks)) {
+      if (pick.is_lotw) return { gameId, pick, level: lockLevel(pick) };
+    }
+    return null;
+  }, [picks]);
+
+  const lotySpentHere = weekLock?.level === "LOTY";
+  const lotySpent = lotySpentHere || lotyUsed !== null;
+
+  const submitPick = useCallback(async (gameId: string, wager: Draft) => {
+    setBusy(gameId);
     setErrors((e) => { const n = { ...e }; delete n[gameId]; return n; });
 
     const res = await fetch("/api/picks", {
@@ -108,7 +124,7 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
       body: JSON.stringify({ game_id: gameId, ...wager }),
     });
     const data = await res.json();
-    setSaving(null);
+    setBusy(null);
 
     if (!res.ok) {
       setErrors((e) => ({ ...e, [gameId]: data.message ?? data.error }));
@@ -123,41 +139,46 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
         selection: wager.selection,
         line: wager.line,
         odds: wager.odds,
-        is_lotw: prev[gameId]?.is_lotw ?? false,
+        is_lotw: false,
+        is_loty: false,
         overridden_by: null,
         overridden_at: null,
       },
     }));
   }, []);
 
-  const saveLotw = useCallback(async (gameId: string) => {
+  const setLock = useCallback(async (gameId: string, level: LockLevel) => {
     const pick = picks[gameId];
     if (!pick) return;
 
-    setSaving(`lotw-${gameId}`);
-    const res = await fetch("/api/picks/lotw", {
+    const key = `lock-${gameId}`;
+    setBusy(key);
+    setErrors((e) => { const n = { ...e }; delete n[key]; return n; });
+
+    const res = await fetch("/api/picks/lock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pick_id: pick.id, week_id: week.id }),
+      body: JSON.stringify({ pick_id: pick.id, level }),
     });
     const data = await res.json();
-    setSaving(null);
+    setBusy(null);
 
     if (!res.ok) {
-      setErrors((e) => ({ ...e, [`lotw-${gameId}`]: data.message ?? data.error }));
+      setErrors((e) => ({ ...e, [key]: data.message ?? data.error }));
       return;
     }
 
-    setPicks((prev) => {
-      const next = { ...prev };
-      for (const gid of Object.keys(next)) next[gid] = { ...next[gid], is_lotw: false };
-      next[gameId] = { ...next[gameId], is_lotw: true };
-      return next;
-    });
-  }, [picks, week.id]);
+    // A LOTY stands in place of the week's LOTW, so both flags move together.
+    setPicks((prev) => ({
+      ...prev,
+      [gameId]: { ...prev[gameId], is_lotw: true, is_loty: level === "LOTY" },
+    }));
+  }, [picks]);
 
   const cfbGames = games.filter((g) => g.sport === "CFB");
   const nflGames = games.filter((g) => g.sport === "NFL");
+
+  const weekLockGame = weekLock ? games.find((g) => g.id === weekLock.gameId) : undefined;
 
   return (
     <div>
@@ -173,9 +194,21 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
           <div className={`text-2xl font-bold tabular-nums ${pickCount >= week.required_picks ? "text-emerald-400" : "text-white"}`}>
             {pickCount} / {week.required_picks}
           </div>
-          <div className="text-xs font-medium text-slate-400">picks made</div>
-          <div className={`text-xs font-semibold mt-1 ${lotwPick ? "text-emerald-400" : "text-amber-400"}`}>
-            {lotwPick ? "🔒 LOTW set" : "⚠ No LOTW"}
+          <div className="text-xs font-medium text-slate-400">picks locked in</div>
+          <div className={`text-xs font-semibold mt-1 ${weekLock ? "text-emerald-400" : "text-amber-400"}`}>
+            {weekLock && weekLockGame
+              ? `${weekLock.level === "LOTY" ? "👑" : "🔒"} ${LOCK_SHORT[weekLock.level]} · ${formatWager(weekLock.pick, weekLockGame)}`
+              : "⚠ No LOTW yet"}
+          </div>
+          <div
+            className={`text-xs font-semibold mt-0.5 ${lotySpent ? "text-slate-400" : "text-fuchsia-300"}`}
+            title={lotyUsed?.matchup ?? undefined}
+          >
+            {lotySpent
+              ? lotySpentHere
+                ? "LOTY spent this week"
+                : `LOTY spent · week ${lotyUsed?.week_number}`
+              : "👑 LOTY available"}
           </div>
         </div>
       </div>
@@ -186,23 +219,38 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
         </div>
       )}
 
+      <div className="mb-4 p-3 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-300 space-y-1">
+        <p><span className="font-semibold text-white">Submitting locks a pick in.</span> Build the wager, then press Lock in pick — after that only the commissioner can change it.</p>
+        <p>
+          Once a pick is in you can raise it to a <span className="font-semibold text-amber-300">Lock of the Week</span> (×{LOCK_MULTIPLIER.LOTW}, one per week)
+          {" or a "}
+          <span className="font-semibold text-fuchsia-300">Lock of the Year</span> (×{LOCK_MULTIPLIER.LOTY}, one per season).
+          A LOTY stands in for that week&apos;s LOTW, so spending it here uses up both.
+        </p>
+      </div>
+
       {[{ label: "NFL", list: nflGames }, { label: "College Football", list: cfbGames }].map(({ label, list }) =>
         list.length === 0 ? null : (
           <div key={label} className="mb-6">
             <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-2">{label}</h2>
             <div className="space-y-2">
-              {list.map((game) => (
-                <GameCard
-                  key={game.id}
-                  game={game}
-                  pick={picks[game.id] ?? null}
-                  locked={isLocked(game)}
-                  saving={saving}
-                  error={errors[game.id] ?? errors[`lotw-${game.id}`] ?? null}
-                  onSave={savePick}
-                  onLotw={saveLotw}
-                />
-              ))}
+              {list.map((game) => {
+                const pick = picks[game.id] ?? null;
+                return (
+                  <GameCard
+                    key={game.id}
+                    game={game}
+                    pick={pick}
+                    kickedOff={isKickedOff(game)}
+                    busy={busy}
+                    error={errors[game.id] ?? errors[`lock-${game.id}`] ?? null}
+                    weekLockOnAnotherPick={weekLock !== null && weekLock.gameId !== game.id}
+                    lotyUsedThisSeason={lotySpent}
+                    onSubmit={submitPick}
+                    onLock={setLock}
+                  />
+                );
+              })}
             </div>
           </div>
         )
@@ -211,45 +259,29 @@ export function PicksClient({ week, games, initialPickMap }: Props) {
   );
 }
 
-function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
+function GameCard({
+  game, pick, kickedOff, busy, error, weekLockOnAnotherPick, lotyUsedThisSeason, onSubmit, onLock,
+}: {
   game: Game;
   pick: PickInfo | null;
-  locked: boolean;
-  saving: string | null;
+  kickedOff: boolean;
+  busy: string | null;
   error: string | null;
-  onSave: (gameId: string, wager: Draft) => void;
-  onLotw: (gameId: string) => void;
+  weekLockOnAnotherPick: boolean;
+  lotyUsedThisSeason: boolean;
+  onSubmit: (gameId: string, wager: Draft) => void;
+  onLock: (gameId: string, level: LockLevel) => void;
 }) {
-  const isSaving = saving === game.id;
-  const isLotwSaving = saving === `lotw-${game.id}`;
+  const isSubmitting = busy === game.id;
+  const isLocking = busy === `lock-${game.id}`;
 
   // Most of this league's history is spreads, so that is the cheapest default.
-  const [betType, setBetType] = useState<BetType>((pick?.bet_type as BetType) ?? "SPREAD");
-  const [selection, setSelection] = useState<Selection | null>(
-    (pick?.selection as Selection) ?? null
-  );
-  const [lineText, setLineText] = useState(
-    pick && pick.bet_type !== "ML" ? String(pick.line) : ""
-  );
-  const [oddsText, setOddsText] = useState(pick?.odds != null ? String(pick.odds) : "");
-
-  const savedSig = useRef<string | null>(pick ? signature(pick) : null);
-
-  // Persist once the wager is complete and valid, debounced — never mid-keystroke.
-  useEffect(() => {
-    if (locked) return;
-    const draft = buildDraft(betType, selection, lineText, oddsText);
-    if (!draft) return;
-
-    const sig = signature(draft);
-    if (sig === savedSig.current) return;
-
-    const timer = setTimeout(() => {
-      savedSig.current = sig;
-      onSave(game.id, draft);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [betType, selection, lineText, oddsText, locked, game.id, onSave]);
+  const [betType, setBetType] = useState<BetType>("SPREAD");
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [lineText, setLineText] = useState("");
+  const [oddsText, setOddsText] = useState("");
+  // Spending the season's only LOTY takes two clicks. Nothing else here does.
+  const [confirmLoty, setConfirmLoty] = useState(false);
 
   /** Switching bet type invalidates a selection that no longer belongs to it. */
   const changeBetType = (next: BetType) => {
@@ -260,16 +292,26 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
 
   const draft = buildDraft(betType, selection, lineText, oddsText);
   const showScores = game.status === "FINAL";
+  const level = pick ? lockLevel(pick) : "NONE";
+
+  const lockCtx = { current: level, weekLockOnAnotherPick, lotyUsedThisSeason };
+  const lotwRefusal = lockUpgradeError("LOTW", lockCtx);
+  const lotyRefusal = lockUpgradeError("LOTY", lockCtx);
 
   return (
-    <div className={`bg-slate-900 border border-slate-700 rounded-xl p-4 shadow-lg shadow-black/30 transition-opacity ${locked ? "opacity-60" : ""}`}>
+    <div className={`bg-slate-900 border rounded-xl p-4 shadow-lg shadow-black/30 transition-opacity ${
+      kickedOff ? "border-slate-700 opacity-60"
+      : level === "LOTY" ? "border-fuchsia-500/70"
+      : level === "LOTW" ? "border-amber-500/60"
+      : "border-slate-700"
+    }`}>
       <div className="flex items-center justify-between mb-3">
         <div className="text-xs text-slate-400">
           {new Date(game.kickoff_time).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
           {" · "}
           {new Date(game.kickoff_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
-        {locked && (
+        {kickedOff ? (
           <span className={`text-xs px-2 py-0.5 rounded font-medium ${
             game.status === "FINAL"
               ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
@@ -277,20 +319,11 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
           }`}>
             {game.status === "FINAL" ? "Final" : "Locked"}
           </span>
-        )}
-        {!locked && pick && (
-          <button
-            onClick={() => onLotw(game.id)}
-            disabled={isLotwSaving || locked}
-            className={`text-xs px-2.5 py-1 rounded-md font-semibold border transition-colors ${
-              pick.is_lotw
-                ? "bg-amber-400 text-slate-950 border-amber-400 shadow-md shadow-amber-500/30"
-                : "text-amber-300 bg-amber-500/10 border-amber-500/60 hover:bg-amber-500/25 hover:text-amber-200"
-            }`}
-          >
-            {isLotwSaving ? "…" : pick.is_lotw ? "🔒 LOTW" : "Set as LOTW"}
-          </button>
-        )}
+        ) : pick ? (
+          <span className="text-xs px-2 py-0.5 rounded font-medium bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/40">
+            Locked in
+          </span>
+        ) : null}
       </div>
 
       {/* Matchup line, with scores once the game is final */}
@@ -307,17 +340,86 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
         )}
       </div>
 
-      {locked ? (
-        <div className="text-sm">
-          {pick ? (
-            <span className="font-semibold text-white">
-              {formatWager(pick, game, true)}
-              {pick.is_lotw && <span className="ml-1.5 text-xs font-semibold text-amber-400">LOTW</span>}
-            </span>
-          ) : (
-            <span className="text-slate-400">No pick</span>
+      {pick ? (
+        // Submitted. The wager itself is settled; only its lock can still be raised.
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap text-sm">
+            <span className="font-semibold text-white">{formatWager(pick, game, true)}</span>
+            {level !== "NONE" && (
+              <span className={`text-xs px-2 py-0.5 rounded font-bold ${
+                level === "LOTY"
+                  ? "bg-fuchsia-400 text-slate-950"
+                  : "bg-amber-400 text-slate-950"
+              }`}>
+                {level === "LOTY" ? "👑" : "🔒"} {LOCK_SHORT[level]} ×{LOCK_MULTIPLIER[level]}
+              </span>
+            )}
+          </div>
+
+          {!kickedOff && level !== "LOTY" && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {level === "NONE" && (
+                <button
+                  onClick={() => onLock(game.id, "LOTW")}
+                  disabled={isLocking || lotwRefusal !== null}
+                  title={lotwRefusal ?? undefined}
+                  className={`text-xs px-2.5 py-1 rounded-md font-semibold border transition-colors ${
+                    lotwRefusal
+                      ? "text-slate-500 bg-slate-800/60 border-slate-700 cursor-not-allowed"
+                      : "text-amber-300 bg-amber-500/10 border-amber-500/60 hover:bg-amber-500/25 hover:text-amber-200 cursor-pointer"
+                  }`}
+                >
+                  {isLocking ? "…" : `Make LOTW ×${LOCK_MULTIPLIER.LOTW}`}
+                </button>
+              )}
+
+              {confirmLoty ? (
+                <span className="flex items-center gap-2 text-xs">
+                  <span className="text-fuchsia-200 font-medium">Spend your only LOTY here?</span>
+                  <button
+                    onClick={() => { setConfirmLoty(false); onLock(game.id, "LOTY"); }}
+                    disabled={isLocking}
+                    className="px-2.5 py-1 rounded-md font-bold bg-fuchsia-400 text-slate-950 hover:bg-fuchsia-300 cursor-pointer"
+                  >
+                    {isLocking ? "…" : "Yes, lock it"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmLoty(false)}
+                    className="px-2 py-1 rounded-md font-semibold text-slate-300 hover:text-white cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={() => setConfirmLoty(true)}
+                  disabled={isLocking || lotyRefusal !== null}
+                  title={lotyRefusal ?? undefined}
+                  className={`text-xs px-2.5 py-1 rounded-md font-semibold border transition-colors ${
+                    lotyRefusal
+                      ? "text-slate-500 bg-slate-800/60 border-slate-700 cursor-not-allowed"
+                      : "text-fuchsia-200 bg-fuchsia-500/10 border-fuchsia-500/60 hover:bg-fuchsia-500/25 cursor-pointer"
+                  }`}
+                >
+                  {level === "LOTW" ? `Upgrade to LOTY ×${LOCK_MULTIPLIER.LOTY}` : `Make LOTY ×${LOCK_MULTIPLIER.LOTY}`}
+                </button>
+              )}
+
+              {/* Why a button is dead, said once rather than only in a tooltip. */}
+              {lotwRefusal && lotyRefusal && (
+                <span className="text-xs text-slate-400">{level === "NONE" ? lotwRefusal : lotyRefusal}</span>
+              )}
+            </div>
+          )}
+
+          {pick.overridden_by && (
+            <p className="text-xs text-orange-400">
+              Modified by admin{pick.overridden_at ? ` · ${new Date(pick.overridden_at).toLocaleDateString([], { month: "short", day: "numeric" })}` : ""}
+            </p>
           )}
         </div>
+      ) : kickedOff ? (
+        <div className="text-sm text-slate-400">No pick</div>
       ) : (
         <div className="space-y-2">
           {/* Bet type */}
@@ -350,7 +452,7 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
                 <button
                   key={side}
                   onClick={() => setSelection(side)}
-                  disabled={isSaving}
+                  disabled={isSubmitting}
                   className={`py-2.5 px-3 rounded-lg border-2 text-sm font-semibold text-left transition-all truncate ${
                     selected
                       ? "border-sky-400 bg-sky-500/25 text-sky-100 shadow-lg shadow-sky-500/20"
@@ -393,32 +495,44 @@ function GameCard({ game, pick, locked, saving, error, onSave, onLotw }: {
             </label>
           </div>
 
-          {/* What will be saved */}
-          <div className="text-xs">
-            {draft ? (
-              <span className="font-semibold text-sky-300">✓ {formatWager(draft, game, true)}</span>
-            ) : (
-              <span className="text-slate-400">
-                {!selection
-                  ? "Pick a side"
-                  : betType === "TOTAL"
-                  ? "Enter the total"
-                  : betType === "SPREAD"
-                  ? "Enter the spread"
-                  : "Check the price"}
+          {/* Submit. Appears with the first selection — nothing to submit before that — and
+              stays disabled, with the reason beside it, until the wager is complete. */}
+          {selection && (
+            <div className="flex items-center gap-3 pt-0.5">
+              <button
+                onClick={() => draft && onSubmit(game.id, draft)}
+                disabled={!draft || isSubmitting}
+                className={`px-3.5 py-2 rounded-lg text-sm font-bold transition-colors ${
+                  draft && !isSubmitting
+                    ? "bg-sky-500 text-slate-950 hover:bg-sky-400 shadow-md shadow-sky-500/30 cursor-pointer"
+                    : "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
+                }`}
+              >
+                {isSubmitting ? "Locking in…" : "Lock in pick"}
+              </button>
+              <span className="text-xs">
+                {draft ? (
+                  <span className="text-sky-300 font-semibold">{formatWager(draft, game, true)} — final once submitted</span>
+                ) : (
+                  <span className="text-slate-400">
+                    {betType === "TOTAL"
+                      ? "Enter the total"
+                      : betType === "SPREAD"
+                      ? "Enter the spread"
+                      : "Check the price"}
+                  </span>
+                )}
               </span>
-            )}
-            {pick?.overridden_by && (
-              <span className="ml-2 text-orange-400">
-                Modified by admin{pick.overridden_at ? ` · ${new Date(pick.overridden_at).toLocaleDateString([], { month: "short", day: "numeric" })}` : ""}
-              </span>
-            )}
-          </div>
+            </div>
+          )}
+
+          {!selection && (
+            <p className="text-xs text-slate-400">Pick a side to submit this game.</p>
+          )}
         </div>
       )}
 
       {error && <p className="mt-2 text-xs font-medium text-red-400">{error}</p>}
-      {isSaving && <p className="mt-2 text-xs text-slate-400">Saving…</p>}
     </div>
   );
 }

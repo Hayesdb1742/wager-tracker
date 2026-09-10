@@ -37,20 +37,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "pick_locked", message: "This game has already kicked off." }, { status: 409 });
   }
 
+  // Submitting is final: a pick is locked in the moment it lands. It used to upsert, which
+  // let a member keep editing a saved wager right up to kickoff -- the league wants the
+  // number a member committed to, not the one they held when the whistle blew. Only
+  // /api/picks/lock may touch a submitted pick afterwards, and only to raise its lock;
+  // fixing a genuine mistake is a commissioner job through /api/admin/picks/override.
+  const { data: existing } = await admin
+    .from("picks")
+    .select("id")
+    .eq("member_id", user.id)
+    .eq("game_id", game_id)
+    .maybeSingle();
+
+  if (existing) {
+    return NextResponse.json(
+      {
+        error: "pick_already_submitted",
+        message: "This pick is locked in. Ask the commissioner if it needs changing.",
+      },
+      { status: 409 }
+    );
+  }
+
   const { data, error } = await admin
     .from("picks")
-    .upsert(
-      {
-        member_id: user.id,
-        game_id,
-        week_id: game.week_id,
-        bet_type,
-        selection,
-        line,
-        odds: odds ?? null,
-      },
-      { onConflict: "member_id,game_id" }
-    )
+    .insert({
+      member_id: user.id,
+      game_id,
+      week_id: game.week_id,
+      bet_type,
+      selection,
+      line,
+      odds: odds ?? null,
+    })
     .select()
     .single();
 

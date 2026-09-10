@@ -50,7 +50,7 @@ export default async function AdminPicksPage({
   const { data: picks } = selectedWeekId
     ? await admin
         .from("picks")
-        .select("id, member_id, game_id, bet_type, selection, line, odds, is_lotw, points, overridden_by, overridden_at")
+        .select("id, member_id, game_id, bet_type, selection, line, odds, is_lotw, is_loty, points, overridden_by, overridden_at")
         .eq("week_id", selectedWeekId)
     : { data: [] };
 
@@ -76,6 +76,7 @@ export default async function AdminPicksPage({
     line: number;
     odds: number | null;
     is_lotw: boolean;
+    is_loty: boolean;
     points: number | null;
     overridden_by: string | null;
     overridden_at: string | null;
