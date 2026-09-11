@@ -15,7 +15,14 @@ import {
   type Selection,
 } from "@/lib/wagers";
 
-type Week = { id: number; week_number: number; required_picks: number; closes_at: string };
+type Week = {
+  id: number;
+  week_number: number;
+  required_picks: number;
+  required_nfl_picks: number | null;
+  required_cfb_picks: number | null;
+  closes_at: string;
+};
 type Game = {
   id: string; sport: string; home_team: string; away_team: string;
   kickoff_time: string; status: string; in_pool: boolean;
@@ -32,6 +39,8 @@ type PickInfo = {
   overridden_by: string | null;
   overridden_at: string | null;
 };
+
+type Sport = "NFL" | "CFB";
 
 type Draft = { bet_type: BetType; selection: Selection; line: number; odds: number | null };
 
@@ -98,6 +107,11 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
   const [picks, setPicks] = useState(initialPickMap);
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const cfbGames = games.filter((g) => g.sport === "CFB");
+  const nflGames = games.filter((g) => g.sport === "NFL");
+  // One sport on screen at a time; CFB used to sit under every NFL game, a long scroll away.
+  const [sport, setSport] = useState<Sport>(nflGames.length > 0 ? "NFL" : "CFB");
 
   const isKickedOff = (game: Game) => new Date(game.kickoff_time) <= new Date();
   const pickCount = Object.keys(picks).length;
@@ -175,8 +189,13 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
     }));
   }, [picks]);
 
-  const cfbGames = games.filter((g) => g.sport === "CFB");
-  const nflGames = games.filter((g) => g.sport === "NFL");
+  const sportPickCount = (list: Game[]) => list.filter((g) => picks[g.id]).length;
+  // Weeks seeded before the per-sport split existed carry null there; show nothing rather than 0.
+  const sportTabs: { key: Sport; label: string; list: Game[]; required: number | null }[] = [
+    { key: "NFL", label: "NFL", list: nflGames, required: week.required_nfl_picks },
+    { key: "CFB", label: "CFB", list: cfbGames, required: week.required_cfb_picks },
+  ];
+  const shown = sportTabs.find((t) => t.key === sport)?.list ?? [];
 
   const weekLockGame = weekLock ? games.find((g) => g.id === weekLock.gameId) : undefined;
 
@@ -213,6 +232,43 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
         </div>
       </div>
 
+      {/* Sport toggle. Hidden when the week only has one sport to show. */}
+      {nflGames.length > 0 && cfbGames.length > 0 && (
+        <div
+          role="radiogroup"
+          aria-label="Sport"
+          className="flex rounded-lg border border-slate-700 bg-slate-800/70 p-0.5 mb-4"
+        >
+          {sportTabs.map(({ key, label, list, required }) => {
+            const active = sport === key;
+            const made = sportPickCount(list);
+            const done = required !== null && made >= required;
+            return (
+              <button
+                key={key}
+                role="radio"
+                aria-checked={active}
+                onClick={() => setSport(key)}
+                className={`flex-1 text-sm px-3 py-2 rounded-md font-semibold transition-colors ${
+                  active
+                    ? "bg-sky-500 text-slate-950 shadow-md shadow-sky-500/30"
+                    : "text-slate-300 hover:bg-slate-700 hover:text-white cursor-pointer"
+                }`}
+              >
+                {label}
+                {required !== null && (
+                  <span className={`ml-1.5 text-xs tabular-nums ${
+                    active ? "text-slate-800" : done ? "text-emerald-400" : "text-slate-500"
+                  }`}>
+                    {made}/{required}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {pickCount < week.required_picks && (
         <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/40 rounded-lg text-sm text-amber-200">
           You need {week.required_picks - pickCount} more pick{week.required_picks - pickCount !== 1 ? "s" : ""} to avoid forfeit penalties.
@@ -229,32 +285,25 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
         </p>
       </div>
 
-      {[{ label: "NFL", list: nflGames }, { label: "College Football", list: cfbGames }].map(({ label, list }) =>
-        list.length === 0 ? null : (
-          <div key={label} className="mb-6">
-            <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-2">{label}</h2>
-            <div className="space-y-2">
-              {list.map((game) => {
-                const pick = picks[game.id] ?? null;
-                return (
-                  <GameCard
-                    key={game.id}
-                    game={game}
-                    pick={pick}
-                    kickedOff={isKickedOff(game)}
-                    busy={busy}
-                    error={errors[game.id] ?? errors[`lock-${game.id}`] ?? null}
-                    weekLockOnAnotherPick={weekLock !== null && weekLock.gameId !== game.id}
-                    lotyUsedThisSeason={lotySpent}
-                    onSubmit={submitPick}
-                    onLock={setLock}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        )
-      )}
+      <div className="space-y-2">
+        {shown.map((game) => {
+          const pick = picks[game.id] ?? null;
+          return (
+            <GameCard
+              key={game.id}
+              game={game}
+              pick={pick}
+              kickedOff={isKickedOff(game)}
+              busy={busy}
+              error={errors[game.id] ?? errors[`lock-${game.id}`] ?? null}
+              weekLockOnAnotherPick={weekLock !== null && weekLock.gameId !== game.id}
+              lotyUsedThisSeason={lotySpent}
+              onSubmit={submitPick}
+              onLock={setLock}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
