@@ -17,20 +17,36 @@ function safeNext(next: string | null): string {
   return "/picks";
 }
 
+// A bare GET never consumes the token: link previewers in chat apps fetch
+// URLs, and that was burning one-time links before members tapped them.
+// Bounce to the confirm page, whose Continue button POSTs back here.
+export async function GET(request: NextRequest) {
+  const { searchParams, origin } = request.nextUrl;
+  const confirm = new URL("/auth/confirm", origin);
+  searchParams.forEach((value, key) => confirm.searchParams.set(key, value));
+  return NextResponse.redirect(confirm);
+}
+
 // Lands one-time links issued by the admin (setup, reset, invite). The app
 // never sends email, so there is no PKCE `code` branch here -- every link
 // carries a `token_hash` produced by `auth.admin.generateLink`.
-export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
-  const token_hash = searchParams.get("token_hash");
-  const type = searchParams.get("type");
-  const next = safeNext(searchParams.get("next"));
+export async function POST(request: NextRequest) {
+  const { origin } = request.nextUrl;
+  const form = await request.formData();
+  const token_hash = form.get("token_hash");
+  const type = form.get("type");
+  const next = safeNext(typeof form.get("next") === "string" ? (form.get("next") as string) : null);
 
-  if (!token_hash || !type || !ALLOWED_TYPES.has(type)) {
-    return NextResponse.redirect(`${origin}/login?expired=1`);
+  if (
+    typeof token_hash !== "string" ||
+    typeof type !== "string" ||
+    !ALLOWED_TYPES.has(type)
+  ) {
+    return NextResponse.redirect(`${origin}/login?expired=1`, 303);
   }
 
-  const response = NextResponse.redirect(`${origin}${next}`);
+  // 303 so the browser follows a POST with a GET
+  const response = NextResponse.redirect(`${origin}${next}`, 303);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,7 +71,7 @@ export async function GET(request: NextRequest) {
   });
 
   if (error) {
-    return NextResponse.redirect(`${origin}/login?expired=1`);
+    return NextResponse.redirect(`${origin}/login?expired=1`, 303);
   }
 
   return response;
