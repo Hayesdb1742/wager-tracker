@@ -67,21 +67,38 @@ lsof -ti tcp:3000 | xargs kill
 
 ---
 
-## 2. Log in (dev magic link)
+## 2. Log in
 
-Supabase's free tier caps transactional email at 3/hour, so **do not** use the
-real magic-link flow for local work. Use the dev bypass instead:
+Sign-in is email + password at `/login`. The app sends **no email at all**:
+invites and password resets are one-time links the admin mints on `/members`
+and hands to the member directly (see §"Auth model" below). If you already have
+a password for your account, just use the login form.
+
+To bootstrap a session without a password (fresh clone, or an account that has
+never set one), use the dev bypass:
 
 ```sh
 open "http://localhost:3000/api/dev/magic-link?email=you@example.com"
 ```
 
-It mints a magic-link token with the service-role key, redirects straight to
+It mints a one-time token with the service-role key, redirects straight to
 `/auth/callback`, and lands you signed in. The route 403s when
-`NODE_ENV=production`, so it's dev-only by construction.
+`NODE_ENV=production`, so it's dev-only by construction. It stays in the repo
+on purpose — it's the only way to get an admin session locally before any
+password exists.
 
-> Still listed for deletion once Resend SMTP is wired up
-> (`src/app/api/dev/magic-link/route.ts`).
+### Auth model
+
+| Event | Path |
+|---|---|
+| Sign in | `/login` → `signInWithPassword` |
+| New member | Admin `/members` → "Create setup link" → `auth.admin.generateLink({type:"invite"})` → link to `/auth/callback?token_hash=…&type=invite&next=/onboarding` → member picks name + password |
+| Forgot password | Admin `/members` → "Reset link" → `generateLink({type:"recovery"})` → `/auth/callback?…&next=/account?setup=1` → member sets password |
+| Change password / sign out | `/account` |
+
+Links inherit the dashboard's *Email OTP expiration* (set to 24h) and are
+single-use. Dashboard prerequisites: Email provider on, min password length 8,
+**Secure password change OFF** (it would try to email a nonce), signups OFF.
 
 Admin pages (`/weeks`, `/results`, `/members`, `/pick-grid`) require
 `app_metadata.role === "ADMIN"` on the auth user — sign in as an admin account,
@@ -169,7 +186,7 @@ curl -X POST http://localhost:3000/api/admin/sync-results \
 | "Port 3000 is in use … using 3001" | Stale dev server — `lsof -ti tcp:3000 \| xargs kill` |
 | `supabaseUrl is required` / undefined env | Running from the wrong directory, or `.env.local` is missing — the `!` assertions in `src/lib/supabase/*.ts` fail loudly |
 | Redirect loop on `/login` | Middleware auth bypass broke; `/api/` must stay in the unauthenticated allowlist in `src/middleware.ts` |
-| Magic link email never arrives | Free-tier SMTP is 3/hr — use the dev endpoint in §2 |
+| A setup/reset link lands on `/login?expired=1` | It was already used or is older than 24h — mint a new one from `/members` |
 | Signed in but admin pages 403 | Role is read from `auth.users.raw_app_meta_data.role`, not `profiles.role`. Both must be set |
 | Weird build/HMR state | `rm -rf .next` and restart |
 | Turbopack-specific breakage | `npx next dev --webpack` to confirm, then file it |

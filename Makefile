@@ -44,7 +44,7 @@ kill: ## Free the dev port (stale next-server from an earlier session)
 	@pids=$$(lsof -ti tcp:$(PORT)); \
 	if [ -n "$$pids" ]; then kill $$pids && echo "killed $$pids on :$(PORT)"; else echo ":$(PORT) already free"; fi
 
-login: ## Sign in locally, bypassing SMTP limits — make login EMAIL=you@example.com
+login: ## Sign in locally without a password (dev-only route) — make login EMAIL=you@example.com
 	@test -n "$(EMAIL)" || { echo "usage: make login EMAIL=you@example.com"; exit 1; }
 	open "http://localhost:$(PORT)/api/dev/magic-link?email=$(EMAIL)"
 

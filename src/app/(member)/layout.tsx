@@ -48,7 +48,9 @@ export default async function MemberLayout({
               </Link>
             )}
           </div>
-          <div className="text-sm text-slate-300">{profile?.display_name}</div>
+          <Link href="/account" className="px-3 py-3 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800">
+            {profile?.display_name}
+          </Link>
         </div>
       </nav>
       <main className="max-w-4xl mx-auto px-4 py-8">{children}</main>

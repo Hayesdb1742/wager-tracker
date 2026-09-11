@@ -141,8 +141,6 @@ export function LeaderboardClient({
   const picksByMember = (memberId: string) =>
     picks.filter((p) => p.member_id === memberId);
 
-  const gamesById = Object.fromEntries(games.map((g) => [g.id, g]));
-
   // The week's record, counted in games rather than picks: the lock is worth two of them,
   // the LOTY seven. Plus the lock this member spent, for the badge.
   const resultCounts = (memberId: string) => {
@@ -214,6 +212,15 @@ export function LeaderboardClient({
                 const { record, lock } = resultCounts(member.member_id);
                 const isExpanded = expandedMember === member.member_id;
                 const memberPicks = picksByMember(member.member_id);
+                // Only the games this member actually bet on, and only once they've kicked
+                // off. Listing a picked game before kickoff would reveal *which* games a
+                // member bet on even with the side hidden, so unstarted games stay out.
+                const now = new Date();
+                const pickedGames = games.filter(
+                  (g) =>
+                    memberPicks.some((p) => p.game_id === g.id) &&
+                    (new Date(g.kickoff_time) <= now || g.status === "FINAL" || g.status === "CANCELLED")
+                );
 
                 return (
                   <div key={member.member_id} className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-lg shadow-black/30">
@@ -275,30 +282,40 @@ export function LeaderboardClient({
                     {/* Expanded: per-game results */}
                     {isExpanded && (
                       <div className="border-t border-slate-700 px-4 py-3 bg-slate-950/60 space-y-2">
-                        {games.length === 0 && (
-                          <p className="text-xs text-slate-400">No games for this week.</p>
+                        {pickedGames.length === 0 && (
+                          <p className="text-xs text-slate-400">No picks have kicked off yet.</p>
                         )}
-                        {games.map((game) => {
+                        {pickedGames.map((game) => {
                           const pick = memberPicks.find((p) => p.game_id === game.id);
-                          const locked = new Date(game.kickoff_time) <= new Date();
+                          const locked = new Date(game.kickoff_time) <= now;
                           // Picks are blind until kickoff. Everything below reads from
                           // `revealed`, never from `pick` — reading `pick` directly is what
                           // used to leak the picked side before the game started.
                           const revealed = locked ? pick : undefined;
                           const grade = revealed ? wagerResult(revealed.points, game.status) : null;
+                          // In progress: kicked off but not yet graded. Status can lag the
+                          // clock, so a past-kickoff SCHEDULED game counts as live too.
+                          const isLive = grade === "PENDING" && game.status !== "POSTPONED";
 
                           return (
                             <div key={game.id} className="flex items-center gap-2 text-sm">
                               {/* Result indicator */}
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                grade === "WIN" ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40" :
-                                grade === "LOSS" ? "bg-red-500/20 text-red-300 ring-1 ring-red-500/40" :
-                                grade === "PENDING" ? "bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40" :
-                                grade === "PUSH" || grade === "VOID" ? "bg-slate-700 text-slate-200" :
-                                "bg-slate-800 text-slate-500 ring-1 ring-slate-700"
-                              }`}>
-                                {grade === null ? "·" : grade === "PENDING" ? "?" : GRADE_LABELS[grade]}
-                              </div>
+                              {isLive ? (
+                                <div className="h-5 px-1.5 rounded-full flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide shrink-0 bg-red-500/15 text-red-300 ring-1 ring-red-500/40">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                                  Live
+                                </div>
+                              ) : (
+                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                  grade === "WIN" ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40" :
+                                  grade === "LOSS" ? "bg-red-500/20 text-red-300 ring-1 ring-red-500/40" :
+                                  grade === "PENDING" ? "bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40" :
+                                  grade === "PUSH" || grade === "VOID" ? "bg-slate-700 text-slate-200" :
+                                  "bg-slate-800 text-slate-500 ring-1 ring-slate-700"
+                                }`}>
+                                  {grade === null ? "·" : grade === "PENDING" ? "?" : GRADE_LABELS[grade]}
+                                </div>
+                              )}
 
                               {/* Matchup */}
                               <div className="flex-1 min-w-0">
@@ -332,15 +349,17 @@ export function LeaderboardClient({
                               {/* Points */}
                               <div className={`text-xs font-medium tabular-nums shrink-0 ${
                                 !revealed ? "text-slate-500" :
+                                isLive ? "text-red-300" :
                                 grade === "PENDING" ? "text-sky-400" :
                                 grade === "WIN" ? "text-emerald-400" :
                                 grade === "LOSS" ? "text-red-400" :
                                 "text-slate-400"
                               }`}>
                                 {!revealed ? (locked ? "–" : "open") :
-                                  grade === "PENDING" ? "live" :
+                                  isLive ? "in play" :
+                                  grade === "PENDING" ? "postponed" :
                                   grade === "VOID" ? "void" :
-                                  revealed.points === null ? "live" :
+                                  revealed.points === null ? "in play" :
                                   revealed.points > 0 ? `+${revealed.points}` :
                                   revealed.points === 0 ? "±0" :
                                   `${revealed.points}`}

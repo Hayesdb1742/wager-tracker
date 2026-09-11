@@ -10,18 +10,68 @@ type Member = {
   created_at: string;
 };
 
+// A freshly minted one-time link, shown to the admin to copy and send on.
+type IssuedLink = { label: string; url: string };
+
+function LinkCard({ link, onDismiss }: { link: IssuedLink; onDismiss: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setCopied(true);
+    } catch {
+      // Clipboard can be unavailable (non-HTTPS, permissions); the input is
+      // selectable so the admin can still copy by hand.
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3">
+      <p className="text-sm font-medium text-emerald-300 mb-2">{link.label}</p>
+      <div className="flex gap-2">
+        <input
+          readOnly
+          value={link.url}
+          onFocus={(e) => e.currentTarget.select()}
+          className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:ring-2 focus:ring-sky-400"
+        />
+        <button
+          type="button"
+          onClick={copy}
+          className="bg-sky-500 text-slate-950 px-3 py-2 rounded-lg text-xs font-semibold transition-colors hover:bg-sky-400"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-xs text-slate-300 border border-slate-600 bg-slate-800 rounded-lg px-3 py-2 font-semibold transition-colors hover:bg-slate-700"
+        >
+          Done
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-slate-400">
+        Send this to them however you like — it&apos;s one-time and expires in 24 hours.
+      </p>
+    </div>
+  );
+}
+
 export function MembersClient({ members: initial }: { members: Member[] }) {
   const [members, setMembers] = useState(initial);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<IssuedLink | null>(null);
+  const [resetLink, setResetLink] = useState<IssuedLink | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     setInviting(true);
     setInviteError(null);
-    setInviteSuccess(null);
+    setInviteLink(null);
 
     const res = await fetch("/api/admin/invites", {
       method: "POST",
@@ -36,8 +86,18 @@ export function MembersClient({ members: initial }: { members: Member[] }) {
       return;
     }
 
-    setInviteSuccess(`Invite sent to ${inviteEmail}`);
+    setInviteLink({ label: `Setup link for ${inviteEmail}`, url: data.setupUrl });
     setInviteEmail("");
+  }
+
+  async function handleResetLink(m: Member) {
+    setResettingId(m.id);
+    setResetLink(null);
+    const res = await fetch(`/api/admin/members/${m.id}/reset-link`, { method: "POST" });
+    const data = await res.json();
+    setResettingId(null);
+    if (!res.ok) { alert(data.error ?? "Failed to create reset link"); return; }
+    setResetLink({ label: `Password reset link for ${m.display_name}`, url: data.resetUrl });
   }
 
   async function handleDeactivate(id: string) {
@@ -59,7 +119,10 @@ export function MembersClient({ members: initial }: { members: Member[] }) {
 
       {/* Invite form */}
       <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl p-6 mb-6">
-        <h2 className="font-semibold text-white mb-4">Invite new member</h2>
+        <h2 className="font-semibold text-white mb-1">Invite new member</h2>
+        <p className="text-sm text-slate-400 mb-4">
+          Creates their account and gives you a one-time setup link to send them. No email is sent.
+        </p>
         <form onSubmit={handleInvite} className="flex gap-3">
           <input
             type="email"
@@ -74,14 +137,19 @@ export function MembersClient({ members: initial }: { members: Member[] }) {
             disabled={inviting}
             className="bg-sky-500 text-slate-950 px-4 py-2 rounded-lg text-sm font-semibold shadow-lg shadow-sky-500/25 transition-colors hover:bg-sky-400 disabled:opacity-40 disabled:shadow-none"
           >
-            {inviting ? "Sending…" : "Send invite"}
+            {inviting ? "Creating…" : "Create setup link"}
           </button>
         </form>
         {inviteError && <p className="mt-2 text-red-400 text-sm font-medium">{inviteError}</p>}
-        {inviteSuccess && <p className="mt-2 text-emerald-400 text-sm font-medium">{inviteSuccess}</p>}
+        {inviteLink && <LinkCard link={inviteLink} onDismiss={() => setInviteLink(null)} />}
       </div>
 
       {/* Members table */}
+      {resetLink && (
+        <div className="mb-6">
+          <LinkCard link={resetLink} onDismiss={() => setResetLink(null)} />
+        </div>
+      )}
       <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-800 border-b border-slate-700">
@@ -122,7 +190,16 @@ export function MembersClient({ members: initial }: { members: Member[] }) {
                 <td className="px-4 py-3 text-slate-300">
                   {new Date(m.created_at).toLocaleDateString()}
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                  {m.is_active && (
+                    <button
+                      onClick={() => handleResetLink(m)}
+                      disabled={resettingId === m.id}
+                      className="text-xs text-slate-300 hover:text-sky-300 border border-slate-600 bg-slate-800 rounded px-2 py-1 font-semibold transition-colors hover:bg-slate-700 hover:border-sky-400 disabled:opacity-40"
+                    >
+                      {resettingId === m.id ? "…" : "Reset link"}
+                    </button>
+                  )}
                   {m.is_active ? (
                     <button
                       onClick={() => handleDeactivate(m.id)}
