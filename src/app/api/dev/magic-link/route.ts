@@ -1,6 +1,9 @@
-// DEV ONLY — remove before deploying to production
+// DEV ONLY — signs in any existing user without a password so an admin session
+// can be bootstrapped locally (`make login EMAIL=...`). Refuses to run in
+// production; the real sign-in path is email + password.
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { buildActionUrl } from "@/lib/auth-links";
 
 export async function GET(request: NextRequest) {
   if (process.env.NODE_ENV === "production") {
@@ -27,10 +30,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No hashed_token in response" }, { status: 500 });
   }
 
-  // Skip the Supabase-hosted verification page entirely — redirect straight to our callback
-  const callbackUrl = new URL("/auth/callback", request.url);
-  callbackUrl.searchParams.set("token_hash", token_hash);
-  callbackUrl.searchParams.set("type", "magiclink");
-
-  return NextResponse.redirect(callbackUrl);
+  return NextResponse.redirect(buildActionUrl(request, token_hash, "magiclink", "/picks"));
 }

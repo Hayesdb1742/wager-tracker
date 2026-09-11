@@ -4,9 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+const MIN_PASSWORD_LENGTH = 8;
+
+const inputClass =
+  "w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400";
+
+// New members land here from an admin-issued invite link with a session but
+// no password yet, so this screen collects both the display name and the
+// password they will sign in with from now on.
 export default function OnboardingPage() {
   const router = useRouter();
   const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,14 +25,30 @@ export default function OnboardingPage() {
     const name = displayName.trim();
     if (!name) return;
 
-    setLoading(true);
     setError(null);
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords don't match.");
+      return;
+    }
+
+    setLoading(true);
 
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
       router.push("/login");
+      return;
+    }
+
+    const { error: passwordError } = await supabase.auth.updateUser({ password });
+    if (passwordError) {
+      setLoading(false);
+      setError(passwordError.message);
       return;
     }
 
@@ -46,7 +72,7 @@ export default function OnboardingPage() {
       <h1 className="text-xl font-semibold mb-1">Welcome to the league</h1>
       <p className="text-slate-300 text-sm mb-6">
         Choose a display name — this is how you&apos;ll appear on the
-        leaderboard.
+        leaderboard — and a password for signing in.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -64,9 +90,47 @@ export default function OnboardingPage() {
             maxLength={32}
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
+            className={inputClass}
             placeholder="e.g. Hayes"
             autoFocus
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="password"
+            className="block text-sm font-semibold text-slate-100 mb-1"
+          >
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            required
+            minLength={MIN_PASSWORD_LENGTH}
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="confirm"
+            className="block text-sm font-semibold text-slate-100 mb-1"
+          >
+            Confirm password
+          </label>
+          <input
+            id="confirm"
+            type="password"
+            required
+            minLength={MIN_PASSWORD_LENGTH}
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className={inputClass}
           />
         </div>
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { buildActionUrl } from "@/lib/auth-links";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -50,27 +51,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create invite" }, { status: 500 });
   }
 
-  // Send invite via Supabase auth (creates user if not exists, sends magic link)
-  const redirectTo = `${request.nextUrl.origin}/auth/callback`;
-  const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo,
+  // Create the auth user (the profiles trigger fires) and mint a one-time
+  // invite token. Nothing is emailed -- the admin hands the link to the
+  // member directly, which is what lets the app run with no SMTP at all.
+  const { data: link, error: linkError } = await admin.auth.admin.generateLink({
+    type: "invite",
+    email,
   });
 
-  if (inviteError) {
-    // Clean up the invite record if auth invite failed
+  if (linkError || !link?.properties?.hashed_token) {
+    // Clean up the invite record if user creation failed
     await admin.from("invites").delete().eq("token", invite.token);
     return NextResponse.json(
-      { error: "Failed to send invite email. Check Supabase SMTP configuration." },
+      { error: linkError?.message ?? "Failed to create the invite link." },
       { status: 500 }
     );
   }
 
-  // Mark invite as used immediately (Supabase handles the auth link)
+  // Mark invite as used immediately; Supabase owns the one-time token now
   await admin
     .from("invites")
     .update({ used_at: new Date().toISOString() })
     .eq("token", invite.token);
 
-  const joinUrl = `${request.nextUrl.origin}/join?token=${invite.token}`;
-  return NextResponse.json({ success: true, joinUrl });
+  const setupUrl = buildActionUrl(request, link.properties.hashed_token, "invite", "/onboarding");
+  return NextResponse.json({ success: true, setupUrl });
 }

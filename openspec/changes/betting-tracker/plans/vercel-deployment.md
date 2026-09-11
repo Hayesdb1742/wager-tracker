@@ -56,24 +56,25 @@ final production URL.
    - Redirect allowlist: add `https://<prod-url>/auth/callback` and, if using
      previews, `https://*.vercel.app/auth/callback` (or the project-scoped
      wildcard) plus keep `http://localhost:3000/auth/callback` for dev.
-2. **Custom SMTP via Resend** (open task 1.6): create Resend account, verify a
-   sending domain (or use their shared domain to start), create API key, enter
-   SMTP creds in Auth → SMTP Settings. Without this, magic links are capped at
-   ~3/hr on Supabase's built-in mailer — unusable for a 10-person league.
-3. Confirm task-1.6 settings while in there: email/password sign-in disabled,
-   magic link enabled, JWT expiry 3600s, refresh-token rolling window 30 days.
-4. After SMTP works: **delete `src/app/api/dev/magic-link/route.ts`** and its
-   allowance in any docs/memory (standing TODO).
+2. ~~Custom SMTP via Resend~~ — dropped 2026-09-11. The app sends no email;
+   sign-in is email + password and invites/resets are admin-minted one-time
+   links (see `docs/local-startup.md` §2).
+3. Task-1.6 settings (Auth → Providers → Email): provider on, min password
+   length 8, **Secure password change OFF**, Email OTP expiration 86400s,
+   signups OFF.
+4. `src/app/api/dev/magic-link/route.ts` stays — it 403s in production and is
+   the local bootstrap for an admin session.
 
 ## Step 4 — Post-deploy smoke test
 
-1. Magic-link login round-trip on the production URL (real email → link →
-   lands on `/picks` authenticated).
+1. Password login round-trip on the production URL (`/login` → lands on
+   `/picks` authenticated).
 2. `/results` as admin: week selector shows 2026 weeks, games render, "Sync
    Results" runs and reports a summary (expect 0 resolved pre-season, no errors).
 3. `curl -X POST https://<prod-url>/api/admin/sync-results -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -d '{"weekId": 22}'`
    → 200 with a summary. This proves the exact call pg_cron will make.
-4. Invite flow: send an invite to a spare email, complete `/join`.
+4. Invite flow: create a setup link for a spare email on `/members`, open it
+   in another browser, complete `/onboarding` (name + password).
 
 ## Step 5 — Hand back for the cron migration
 

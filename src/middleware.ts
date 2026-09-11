@@ -35,7 +35,6 @@ export async function middleware(request: NextRequest) {
   if (
     !user &&
     !pathname.startsWith("/login") &&
-    !pathname.startsWith("/join") &&
     !pathname.startsWith("/auth") &&
     !pathname.startsWith("/deactivated") &&
     !pathname.startsWith("/api/")

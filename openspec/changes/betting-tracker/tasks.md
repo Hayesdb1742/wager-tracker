@@ -5,7 +5,7 @@
 - [x] 1.3 Install and configure `@supabase/supabase-js` and `@supabase/ssr`; create `src/lib/supabase/client.ts` and `src/lib/supabase/server.ts`
 - [x] 1.4 Create Next.js middleware at `src/middleware.ts` that refreshes the Supabase session cookie on every request and protects `(admin)` routes by checking `app_metadata.role`
 - [x] 1.5 Set up the App Router directory structure: route groups `(auth)`, `(member)`, `(admin)` with placeholder `layout.tsx` files
-- [ ] 1.6 Configure Supabase Auth: disable email/password sign-in, enable magic link (OTP), set JWT expiry to 3600s, set refresh token rolling window to 30 days, configure custom SMTP (Resend)
+- [ ] 1.6 Configure Supabase Auth for password sign-in with no SMTP: Email provider on, min password length 8, Secure password change OFF, Email OTP expiration 86400s, signups OFF. (Magic link + Resend dropped 2026-09-11: built-in SMTP only delivers to org members, and a sending domain was not worth it for 9 users. Invites/resets are admin-minted one-time links.)
 
 ## 2. Database Schema
 
