@@ -58,8 +58,8 @@ export function MembersClient({ members: initial }: { members: Member[] }) {
       <h1 className="text-2xl font-bold mb-6">Members</h1>
 
       {/* Invite form */}
-      <div className="bg-white border rounded-xl p-6 mb-6">
-        <h2 className="font-semibold text-gray-800 mb-4">Invite new member</h2>
+      <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl p-6 mb-6">
+        <h2 className="font-semibold text-white mb-4">Invite new member</h2>
         <form onSubmit={handleInvite} className="flex gap-3">
           <input
             type="email"
@@ -67,42 +67,42 @@ export function MembersClient({ members: initial }: { members: Member[] }) {
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.target.value)}
             placeholder="email@example.com"
-            className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400"
           />
           <button
             type="submit"
             disabled={inviting}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            className="bg-sky-500 text-slate-950 px-4 py-2 rounded-lg text-sm font-semibold shadow-lg shadow-sky-500/25 transition-colors hover:bg-sky-400 disabled:opacity-40 disabled:shadow-none"
           >
             {inviting ? "Sending…" : "Send invite"}
           </button>
         </form>
-        {inviteError && <p className="mt-2 text-red-600 text-sm">{inviteError}</p>}
-        {inviteSuccess && <p className="mt-2 text-green-600 text-sm">{inviteSuccess}</p>}
+        {inviteError && <p className="mt-2 text-red-400 text-sm font-medium">{inviteError}</p>}
+        {inviteSuccess && <p className="mt-2 text-emerald-400 text-sm font-medium">{inviteSuccess}</p>}
       </div>
 
       {/* Members table */}
-      <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
+          <thead className="bg-slate-800 border-b border-slate-700">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Joined</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-200">Name</th>
+              <th className="text-left px-4 py-3 font-medium text-slate-300">Role</th>
+              <th className="text-left px-4 py-3 font-medium text-slate-300">Status</th>
+              <th className="text-left px-4 py-3 font-medium text-slate-300">Joined</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y divide-slate-800">
             {members.map((m) => (
-              <tr key={m.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium">{m.display_name}</td>
+              <tr key={m.id} className="hover:bg-slate-800">
+                <td className="px-4 py-3 font-semibold text-white">{m.display_name}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                       m.role === "ADMIN"
-                        ? "bg-purple-100 text-purple-700"
-                        : "bg-gray-100 text-gray-600"
+                        ? "bg-violet-500/20 text-violet-300 ring-1 ring-violet-500/40"
+                        : "bg-slate-700 text-slate-200 ring-1 ring-slate-600"
                     }`}
                   >
                     {m.role}
@@ -112,28 +112,28 @@ export function MembersClient({ members: initial }: { members: Member[] }) {
                   <span
                     className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                       m.is_active
-                        ? "bg-green-100 text-green-700"
-                        : "bg-red-100 text-red-600"
+                        ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+                        : "bg-red-500/20 text-red-300 ring-1 ring-red-500/40"
                     }`}
                   >
                     {m.is_active ? "Active" : "Inactive"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-gray-500">
+                <td className="px-4 py-3 text-slate-300">
                   {new Date(m.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-4 py-3 text-right">
                   {m.is_active ? (
                     <button
                       onClick={() => handleDeactivate(m.id)}
-                      className="text-xs text-gray-500 hover:text-red-600 border rounded px-2 py-1 hover:border-red-300"
+                      className="text-xs text-slate-300 hover:text-red-300 border border-slate-600 bg-slate-800 rounded px-2 py-1 font-semibold transition-colors hover:bg-slate-700 hover:border-red-400"
                     >
                       Deactivate
                     </button>
                   ) : (
                     <button
                       onClick={() => handleReactivate(m.id)}
-                      className="text-xs text-gray-500 hover:text-green-600 border rounded px-2 py-1"
+                      className="text-xs text-slate-300 hover:text-emerald-300 border border-slate-600 bg-slate-800 rounded px-2 py-1 font-semibold transition-colors hover:bg-slate-700"
                     >
                       Reactivate
                     </button>

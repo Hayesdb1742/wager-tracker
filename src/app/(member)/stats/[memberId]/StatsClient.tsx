@@ -39,14 +39,14 @@ export function StatsClient({ memberId, memberName, otherMembers, myWeeklyScores
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Head-to-Head</h2>
-      <div className="bg-white border rounded-xl p-4">
+      <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Head-to-Head</h2>
+      <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl p-4">
         <div className="flex items-center gap-3 mb-4">
-          <span className="text-sm text-gray-500">{memberName} vs.</span>
+          <span className="text-sm font-semibold text-slate-200">{memberName} vs.</span>
           <select
             value={opponentId}
             onChange={(e) => setOpponentId(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white flex-1 max-w-[200px]"
+            className="text-sm font-medium border border-slate-600 rounded-lg px-3 py-1.5 bg-slate-800 text-white flex-1 max-w-[200px] hover:border-slate-500 focus:border-sky-400 focus:outline-none"
           >
             <option value="">Select member…</option>
             {otherMembers.map((m) => (
@@ -56,27 +56,27 @@ export function StatsClient({ memberId, memberName, otherMembers, myWeeklyScores
         </div>
 
         {!opponent ? (
-          <p className="text-sm text-gray-400">Select a member to compare records.</p>
+          <p className="text-sm text-slate-400">Select a member to compare records.</p>
         ) : sharedWeekIds.length === 0 ? (
-          <p className="text-sm text-gray-400">No shared weeks found.</p>
+          <p className="text-sm text-slate-400">No shared weeks found.</p>
         ) : (
           <>
             {/* Summary */}
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">{h2hWins}</div>
-                <div className="text-xs text-gray-400">Wins</div>
+                <div className="text-2xl font-bold text-emerald-400">{h2hWins}</div>
+                <div className="text-xs font-medium text-slate-400">Wins</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-400">{h2hTies}</div>
-                <div className="text-xs text-gray-400">Ties</div>
+                <div className="text-2xl font-bold text-slate-300">{h2hTies}</div>
+                <div className="text-xs font-medium text-slate-400">Ties</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-red-500">{h2hLosses}</div>
-                <div className="text-xs text-gray-400">Losses</div>
+                <div className="text-2xl font-bold text-red-400">{h2hLosses}</div>
+                <div className="text-xs font-medium text-slate-400">Losses</div>
               </div>
             </div>
-            <div className={`text-center text-sm font-medium mb-4 ${h2hDiff > 0 ? "text-green-600" : h2hDiff < 0 ? "text-red-500" : "text-gray-400"}`}>
+            <div className={`text-center text-sm font-medium mb-4 ${h2hDiff > 0 ? "text-emerald-400" : h2hDiff < 0 ? "text-red-400" : "text-slate-400"}`}>
               Point differential: {h2hDiff > 0 ? `+${h2hDiff}` : h2hDiff}
             </div>
 
@@ -85,16 +85,16 @@ export function StatsClient({ memberId, memberName, otherMembers, myWeeklyScores
               {h2hWeeks.sort((a, b) => a.week_id - b.week_id).map((w) => (
                 <div key={w.week_id} className="flex items-center gap-2 text-sm">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                    w.result === "W" ? "bg-green-100 text-green-600" :
-                    w.result === "L" ? "bg-red-100 text-red-500" :
-                    "bg-gray-100 text-gray-400"
+                    w.result === "W" ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40" :
+                    w.result === "L" ? "bg-red-500/20 text-red-300 ring-1 ring-red-500/40" :
+                    "bg-slate-700 text-slate-200 ring-1 ring-slate-600"
                   }`}>{w.result}</div>
-                  <span className="text-gray-400 w-14 shrink-0">Week {w.week_id}</span>
-                  <span className={`font-medium tabular-nums ${w.my_total > 0 ? "text-gray-900" : "text-red-500"}`}>
+                  <span className="text-slate-400 font-medium w-14 shrink-0">Week {w.week_id}</span>
+                  <span className={`font-medium tabular-nums ${w.my_total > 0 ? "text-white" : "text-red-400"}`}>
                     {w.my_total > 0 ? `+${w.my_total}` : w.my_total}
                   </span>
-                  <span className="text-gray-300">vs</span>
-                  <span className={`tabular-nums ${w.opp_total > 0 ? "text-gray-600" : "text-red-400"}`}>
+                  <span className="text-slate-500">vs</span>
+                  <span className={`tabular-nums ${w.opp_total > 0 ? "text-slate-300" : "text-red-400"}`}>
                     {w.opp_total > 0 ? `+${w.opp_total}` : w.opp_total}
                   </span>
                 </div>

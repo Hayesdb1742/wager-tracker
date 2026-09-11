@@ -176,3 +176,167 @@ export function validateWager(input: {
 
   return null;
 }
+
+// ---------------------------------------------------------------- locks
+
+/**
+ * The lock a pick carries, and the weight it grades at.
+ *
+ * A LOTY stands in place of that week's LOTW, so a pick holding one carries `is_lotw` too
+ * (picks_loty_implies_lotw) -- read the level with `lockLevel`, never `is_lotw` alone, or a
+ * LOTY reads as a plain LOTW.
+ */
+export type LockLevel = "NONE" | "LOTW" | "LOTY";
+
+export const LOCK_LABELS: Record<LockLevel, string> = {
+  NONE: "",
+  LOTW: "Lock of the Week",
+  LOTY: "Lock of the Year",
+};
+
+export const LOCK_SHORT: Record<LockLevel, string> = { NONE: "", LOTW: "LOTW", LOTY: "LOTY" };
+
+/**
+ * What a lock is worth -- in points AND in games.
+ *
+ * The league voted on the second half of that: a lock does not just swing the points, it
+ * swings the record. A lost LOTW is two losses, not one, so 2-3 on the week with the lock
+ * down reads 2-4; a lost LOTY reads 2-9. One number drives both, so the record can never
+ * drift from the score. Matches the grading weights in resolve_game.
+ */
+export const LOCK_MULTIPLIER: Record<LockLevel, number> = { NONE: 1, LOTW: 2, LOTY: 7 };
+
+export function lockLevel(pick: { is_lotw?: boolean | null; is_loty?: boolean | null }): LockLevel {
+  if (pick.is_loty) return "LOTY";
+  if (pick.is_lotw) return "LOTW";
+  return "NONE";
+}
+
+/**
+ * Whether a submitted pick may be raised to `level`. Returns a message the member can read,
+ * or null when the upgrade is allowed.
+ *
+ * A lock is an upgrade, never a move: NONE -> LOTW -> LOTY, one way, and only onto a pick
+ * that is already in. LOTW needs the week's lock unspent. LOTY needs the season's LOTY
+ * unspent plus either the week's lock unspent or this very pick already holding it -- the
+ * LOTY takes the LOTW's place rather than sitting beside it.
+ *
+ * Shared because /api/picks/lock enforces this and the pick screen has to grey out the same
+ * buttons for the same reasons.
+ */
+export function lockUpgradeError(
+  level: LockLevel,
+  ctx: { current: LockLevel; weekLockOnAnotherPick: boolean; lotyUsedThisSeason: boolean }
+): string | null {
+  if (level === "NONE") return "A lock cannot be taken back off a pick.";
+
+  if (LOCK_MULTIPLIER[level] <= LOCK_MULTIPLIER[ctx.current]) {
+    return ctx.current === level
+      ? `This pick is already your ${LOCK_LABELS[level]}.`
+      : `This pick is already your ${LOCK_LABELS[ctx.current]}, which outranks a ${LOCK_SHORT[level]}.`;
+  }
+
+  if (ctx.weekLockOnAnotherPick) {
+    return "You have already locked another game this week.";
+  }
+
+  if (level === "LOTY" && ctx.lotyUsedThisSeason) {
+    return "You have already used your Lock of the Year this season.";
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------- records
+
+/**
+ * A won-lost-pushed record, counted in games rather than in picks.
+ *
+ * The distinction only matters because of locks. The league's ruling is that the W-L
+ * record, not the point total, is how a week reads -- so a lock has to show up in it. A
+ * pick counts for `LOCK_MULTIPLIER[level]` games on whichever side it landed: a plain pick
+ * is one, a LOTW two, a LOTY seven. Two wins and three losses with the LOTW among the
+ * losses is 2-4; with the LOTY among them, 2-9.
+ *
+ * A push is a no-action, so it stays one row however it was locked -- there is nothing to
+ * double when nothing was won or lost.
+ */
+export type LeagueRecord = { wins: number; losses: number; pushes: number };
+
+export type ScoredPick = {
+  points: number | null;
+  is_lotw?: boolean | null;
+  is_loty?: boolean | null;
+};
+
+/**
+ * Tally picks into a record. Ungraded picks (`points` null) sit out.
+ *
+ * Every record on the site runs through here. Four screens used to each write their own
+ * `.filter((p) => p.points > 0).length`, which is exactly the shape that cannot represent a
+ * lock -- one pick, one game, no weight.
+ */
+export function pickRecord(picks: readonly ScoredPick[]): LeagueRecord {
+  const record: LeagueRecord = { wins: 0, losses: 0, pushes: 0 };
+
+  for (const pick of picks) {
+    if (pick.points === null || pick.points === undefined) continue;
+    const games = LOCK_MULTIPLIER[lockLevel(pick)];
+    if (pick.points > 0) record.wins += games;
+    else if (pick.points < 0) record.losses += games;
+    else record.pushes += 1;
+  }
+
+  return record;
+}
+
+/** Decided games -- the denominator for a win rate. Pushes are not decided. */
+export function decidedGames(record: LeagueRecord): number {
+  return record.wins + record.losses;
+}
+
+/** Win rate over decided games, as a whole percent. 0 when nothing is decided. */
+export function winPct(record: LeagueRecord): number {
+  const decided = decidedGames(record);
+  return decided > 0 ? Math.round((record.wins / decided) * 100) : 0;
+}
+
+/** "2–4", or "2–4–1" when there are pushes to show. */
+export function formatRecord(record: LeagueRecord): string {
+  const base = `${record.wins}–${record.losses}`;
+  return record.pushes > 0 ? `${base}–${record.pushes}` : base;
+}
+
+/**
+ * The lock record's own scale -- NOT LOCK_MULTIPLIER, on purpose.
+ *
+ * This one is a season-long prize: the league hands something out at the end of the year
+ * for it, and they weight a LOTY at 3x a LOTW for that purpose. It is deliberately not the
+ * 2-and-7 the league record reads in, because it is not measuring the same thing -- it asks
+ * how a member did on the locks they spent, on a scale the prize was agreed in.
+ *
+ * If someone later "fixes" this to LOCK_MULTIPLIER, the prize changes. Don't.
+ */
+export const LOCK_PRIZE_WEIGHT: Record<LockLevel, number> = { NONE: 0, LOTW: 1, LOTY: 3 };
+
+/**
+ * Tally only the picks that carried a lock, on the prize scale above. Unlike `pickRecord`,
+ * a push is weighted too, so all three numbers stay on one scale.
+ *
+ * Shared so the all-time standings column and the member's own Locks card cannot disagree
+ * about a number a prize rides on.
+ */
+export function lockRecord(picks: readonly ScoredPick[]): LeagueRecord {
+  const record: LeagueRecord = { wins: 0, losses: 0, pushes: 0 };
+
+  for (const pick of picks) {
+    if (pick.points === null || pick.points === undefined) continue;
+    const weight = LOCK_PRIZE_WEIGHT[lockLevel(pick)];
+    if (weight === 0) continue;
+    if (pick.points > 0) record.wins += weight;
+    else if (pick.points < 0) record.losses += weight;
+    else record.pushes += weight;
+  }
+
+  return record;
+}

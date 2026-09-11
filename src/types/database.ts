@@ -228,6 +228,7 @@ export type Database = {
           game_id: string
           id: string
           is_lotw: boolean
+          is_loty: boolean
           line: number
           member_id: string
           odds: number | null
@@ -244,6 +245,7 @@ export type Database = {
           game_id: string
           id?: string
           is_lotw?: boolean
+          is_loty?: boolean
           line: number
           member_id: string
           odds?: number | null
@@ -260,6 +262,7 @@ export type Database = {
           game_id?: string
           id?: string
           is_lotw?: boolean
+          is_loty?: boolean
           line?: number
           member_id?: string
           odds?: number | null

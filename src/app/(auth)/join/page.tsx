@@ -32,12 +32,12 @@ export default async function JoinPage({ searchParams }: Props) {
     const exists = users.users.some((u) => u.email === invite.email);
     if (exists) {
       return (
-        <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
+        <div className="bg-slate-900 rounded-xl shadow-xl shadow-black/40 border border-slate-700 p-8 text-center">
           <h1 className="text-xl font-semibold mb-2">Account already exists</h1>
-          <p className="text-gray-500 text-sm mb-4">
+          <p className="text-slate-300 text-sm mb-4">
             An account for <strong>{invite.email}</strong> is already set up.
           </p>
-          <a href="/login" className="text-blue-600 hover:underline text-sm">
+          <a href="/login" className="text-sm font-semibold text-sky-400 hover:text-sky-300 hover:underline">
             Sign in instead
           </a>
         </div>
@@ -48,13 +48,13 @@ export default async function JoinPage({ searchParams }: Props) {
 
   // Valid invite — show confirmation of who is being invited
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
+    <div className="bg-slate-900 rounded-xl shadow-xl shadow-black/40 border border-slate-700 p-8 text-center">
       <h1 className="text-xl font-semibold mb-2">You&apos;re invited!</h1>
-      <p className="text-gray-500 text-sm mb-4">
+      <p className="text-slate-300 text-sm mb-4">
         An invite was sent to <strong>{invite.email}</strong>. Check your inbox
         for a sign-in link to complete setup.
       </p>
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-slate-400">
         Didn&apos;t get the email? Ask your admin to re-invite you.
       </p>
     </div>
@@ -63,9 +63,9 @@ export default async function JoinPage({ searchParams }: Props) {
 
 function InviteError({ message }: { message: string }) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
-      <h1 className="text-xl font-semibold mb-2 text-red-600">Invite invalid</h1>
-      <p className="text-gray-500 text-sm">{message}</p>
+    <div className="bg-slate-900 rounded-xl shadow-xl shadow-black/40 border border-slate-700 p-8 text-center">
+      <h1 className="text-xl font-semibold mb-2 text-red-400">Invite invalid</h1>
+      <p className="text-slate-300 text-sm">{message}</p>
     </div>
   );
 }

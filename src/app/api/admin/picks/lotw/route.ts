@@ -26,10 +26,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "week_closed" }, { status: 409 });
   }
 
-  // Atomically clear previous LOTW and set new one
+  // Atomically clear previous LOTW and set new one. is_loty comes off with it: a LOTY
+  // carries is_lotw (picks_loty_implies_lotw), so clearing one without the other would fail
+  // the constraint -- and moving the week's lock off a LOTY hands that LOTY back to the
+  // member unspent, which is the outcome a commissioner correcting a misplaced lock wants.
   await admin
     .from("picks")
-    .update({ is_lotw: false })
+    .update({ is_lotw: false, is_loty: false })
     .eq("member_id", member_id)
     .eq("week_id", week_id)
     .eq("is_lotw", true);

@@ -30,7 +30,7 @@ export async function GET(
       .order("kickoff_time", { ascending: true }),
     admin
       .from("picks")
-      .select("member_id, game_id, bet_type, selection, line, odds, is_lotw, points")
+      .select("member_id, game_id, bet_type, selection, line, odds, is_lotw, is_loty, points")
       .eq("week_id", weekId),
   ]);
 

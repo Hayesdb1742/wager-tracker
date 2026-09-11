@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { selectedTeam } from "@/lib/wagers";
+import { selectedTeam, pickRecord, lockRecord, winPct } from "@/lib/wagers";
 
 type AllTimeStat = {
   member_id: string;
@@ -13,6 +13,9 @@ type AllTimeStat = {
   losses: number;
   pushes: number;
   win_pct: number;
+  lock_wins: number;
+  lock_losses: number;
+  lock_pushes: number;
 };
 
 type TeamTendency = {
@@ -30,7 +33,7 @@ export default async function AnalyticsPage() {
   const [profilesRes, scoresRes, picksRes, seasonsRes] = await Promise.all([
     admin.from("profiles").select("id, display_name").eq("is_active", true),
     admin.from("weekly_scores").select("member_id, total, week_id, weeks(season_id, status)"),
-    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, points, games(home_team, away_team, winner, status)").not("points", "is", null),
+    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, is_loty, points, games(home_team, away_team, winner, status)").not("points", "is", null),
     admin.from("seasons").select("id, name, year").order("year", { ascending: false }),
   ]);
 
@@ -52,6 +55,9 @@ export default async function AnalyticsPage() {
       losses: 0,
       pushes: 0,
       win_pct: 0,
+      lock_wins: 0,
+      lock_losses: 0,
+      lock_pushes: 0,
     });
   }
 
@@ -72,27 +78,44 @@ export default async function AnalyticsPage() {
     if (stat) stat.seasons_played = seasonSet.size;
   }
 
+  // All-time record, counted in games: a LOTW is two of them and a LOTY seven, so a member
+  // who leaned on their locks and missed carries it in the W-L, not just in the points.
+  const picksByMember = new Map<string, typeof picks>();
   for (const pick of picks) {
-    const stat = statsMap.get(pick.member_id);
+    const list = picksByMember.get(pick.member_id);
+    if (list) list.push(pick);
+    else picksByMember.set(pick.member_id, [pick]);
+  }
+
+  for (const [memberId, memberPicks] of picksByMember) {
+    const stat = statsMap.get(memberId);
     if (!stat) continue;
-    stat.total_picks += 1;
-    if (pick.points !== null) {
-      if (pick.points > 0) stat.wins += 1;
-      else if (pick.points < 0) stat.losses += 1;
-      else stat.pushes += 1;
-    }
+    // total_picks stays a count of picks -- it answers "how many bets", not "how many games".
+    stat.total_picks = memberPicks.length;
+    const { wins, losses, pushes } = pickRecord(memberPicks);
+    stat.wins = wins;
+    stat.losses = losses;
+    stat.pushes = pushes;
+
+    // The lock column keeps its own scale -- LOTY at 3x a LOTW, not the 2-and-7 the league
+    // record now reads in -- because a year-end prize rides on this number. See
+    // LOCK_PRIZE_WEIGHT.
+    const locks = lockRecord(memberPicks);
+    stat.lock_wins = locks.wins;
+    stat.lock_losses = locks.losses;
+    stat.lock_pushes = locks.pushes;
   }
 
   for (const stat of statsMap.values()) {
-    const decided = stat.wins + stat.losses;
-    stat.win_pct = decided > 0 ? Math.round((stat.wins / decided) * 100) : 0;
+    stat.win_pct = winPct(stat);
   }
 
   const standings = Array.from(statsMap.values())
     .filter((s) => s.weeks_played > 0)
     .sort((a, b) => b.all_time_total - a.all_time_total || a.display_name.localeCompare(b.display_name));
 
-  // League-wide team tendencies
+  // League-wide team tendencies. Per pick, not per game -- see the member stats page: this
+  // measures how often the league is right about a team, which a lock does not change.
   const teamMap = new Map<string, TeamTendency>();
   for (const pick of picks) {
     const game = pick.games;
@@ -124,47 +147,55 @@ export default async function AnalyticsPage() {
 
       {/* All-time standings */}
       <section className="mb-8">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">All-Time Standings</h2>
+        <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">All-Time Standings</h2>
         {standings.length === 0 ? (
-          <p className="text-sm text-gray-400">No closed weeks yet.</p>
+          <p className="text-sm text-slate-400">No closed weeks yet.</p>
         ) : (
-          <div className="bg-white border rounded-xl overflow-hidden">
+          <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-max">
                 <thead>
-                  <tr className="border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                  <tr className="border-b border-slate-700 bg-slate-800 text-xs font-bold text-slate-300 uppercase tracking-wide">
                     <th className="px-4 py-2 text-left w-8">#</th>
                     <th className="px-4 py-2 text-left">Member</th>
                     <th className="px-4 py-2 text-center">Seasons</th>
                     <th className="px-4 py-2 text-center">Weeks</th>
                     <th className="px-4 py-2 text-center">W-L-P</th>
+                    <th className="px-4 py-2 text-center">LOTW</th>
                     <th className="px-4 py-2 text-center">Win %</th>
                     <th className="px-4 py-2 text-right">Total Pts</th>
                   </tr>
                 </thead>
                 <tbody>
                   {standings.map((s, idx) => (
-                    <tr key={s.member_id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                    <tr key={s.member_id} className="border-b border-slate-800 last:border-0 hover:bg-slate-800/70">
                       <td className={`px-4 py-3 font-bold text-sm ${
-                        idx === 0 ? "text-amber-500" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-amber-700" : "text-gray-300"
+                        idx === 0 ? "text-amber-400" : idx === 1 ? "text-slate-300" : idx === 2 ? "text-orange-400" : "text-slate-400"
                       }`}>{idx + 1}</td>
                       <td className="px-4 py-3">
-                        <Link href={`/stats/${s.member_id}`} className="font-semibold text-gray-900 hover:text-blue-600 transition-colors">
+                        <Link href={`/stats/${s.member_id}`} className="font-semibold text-white underline-offset-4 hover:text-sky-300 hover:underline transition-colors">
                           {s.display_name}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-center text-gray-600">{s.seasons_played}</td>
-                      <td className="px-4 py-3 text-center text-gray-600">{s.weeks_played}</td>
-                      <td className="px-4 py-3 text-center text-gray-600 tabular-nums">
+                      <td className="px-4 py-3 text-center text-slate-300">{s.seasons_played}</td>
+                      <td className="px-4 py-3 text-center text-slate-300">{s.weeks_played}</td>
+                      <td className="px-4 py-3 text-center text-slate-300 tabular-nums">
                         {s.wins}–{s.losses}{s.pushes > 0 ? `–${s.pushes}` : ""}
                       </td>
+                      <td className="px-4 py-3 text-center text-slate-300 tabular-nums">
+                        {s.lock_wins + s.lock_losses + s.lock_pushes === 0 ? (
+                          <span className="text-slate-500">—</span>
+                        ) : (
+                          <>{s.lock_wins}–{s.lock_losses}{s.lock_pushes > 0 ? `–${s.lock_pushes}` : ""}</>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`font-medium tabular-nums ${s.win_pct >= 60 ? "text-green-600" : s.win_pct >= 50 ? "text-gray-700" : "text-red-500"}`}>
+                        <span className={`font-medium tabular-nums ${s.win_pct >= 60 ? "text-emerald-400" : s.win_pct >= 50 ? "text-slate-100" : "text-red-400"}`}>
                           {s.win_pct}%
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right font-bold tabular-nums">
-                        <span className={s.all_time_total > 0 ? "text-gray-900" : "text-red-500"}>
+                        <span className={s.all_time_total > 0 ? "text-white" : "text-red-400"}>
                           {s.all_time_total > 0 ? `+${s.all_time_total}` : s.all_time_total}
                         </span>
                       </td>
@@ -179,14 +210,14 @@ export default async function AnalyticsPage() {
 
       {/* League-wide team tendencies */}
       <section>
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Most-Picked Teams (League)</h2>
+        <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Most-Picked Teams (League)</h2>
         {teamTendencies.length === 0 ? (
-          <p className="text-sm text-gray-400">No resolved games yet.</p>
+          <p className="text-sm text-slate-400">No resolved games yet.</p>
         ) : (
-          <div className="bg-white border rounded-xl overflow-hidden">
+          <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                <tr className="border-b border-slate-700 bg-slate-800 text-xs font-bold text-slate-300 uppercase tracking-wide">
                   <th className="px-4 py-2 text-left">Team</th>
                   <th className="px-4 py-2 text-center">Picks</th>
                   <th className="px-4 py-2 text-center">W-L-P</th>
@@ -195,14 +226,14 @@ export default async function AnalyticsPage() {
               </thead>
               <tbody>
                 {teamTendencies.map((t) => (
-                  <tr key={t.team} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{t.team}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-600">{t.picks}</td>
-                    <td className="px-4 py-2.5 text-center text-gray-600 tabular-nums">
+                  <tr key={t.team} className="border-b border-slate-800 last:border-0 hover:bg-slate-800/70">
+                    <td className="px-4 py-2.5 font-semibold text-white">{t.team}</td>
+                    <td className="px-4 py-2.5 text-center text-slate-300">{t.picks}</td>
+                    <td className="px-4 py-2.5 text-center text-slate-300 tabular-nums">
                       {t.wins}–{t.losses}{t.pushes > 0 ? `–${t.pushes}` : ""}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className={`font-medium tabular-nums ${t.win_pct >= 60 ? "text-green-600" : t.win_pct >= 50 ? "text-gray-700" : "text-red-500"}`}>
+                      <span className={`font-medium tabular-nums ${t.win_pct >= 60 ? "text-emerald-400" : t.win_pct >= 50 ? "text-slate-100" : "text-red-400"}`}>
                         {t.win_pct}%
                       </span>
                     </td>

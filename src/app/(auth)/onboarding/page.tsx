@@ -42,9 +42,9 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-8">
+    <div className="bg-slate-900 rounded-xl shadow-xl shadow-black/40 border border-slate-700 p-8">
       <h1 className="text-xl font-semibold mb-1">Welcome to the league</h1>
-      <p className="text-gray-500 text-sm mb-6">
+      <p className="text-slate-300 text-sm mb-6">
         Choose a display name — this is how you&apos;ll appear on the
         leaderboard.
       </p>
@@ -53,7 +53,7 @@ export default function OnboardingPage() {
         <div>
           <label
             htmlFor="displayName"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-semibold text-slate-100 mb-1"
           >
             Display name
           </label>
@@ -64,18 +64,18 @@ export default function OnboardingPage() {
             maxLength={32}
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
             placeholder="e.g. Hayes"
             autoFocus
           />
         </div>
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="text-red-400 text-sm">{error}</p>}
 
         <button
           type="submit"
           disabled={loading || !displayName.trim()}
-          className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          className="w-full rounded-lg bg-sky-500 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/25 transition-colors hover:bg-sky-400 disabled:opacity-40 disabled:shadow-none"
         >
           {loading ? "Saving…" : "Get started"}
         </button>
