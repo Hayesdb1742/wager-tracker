@@ -14,3 +14,14 @@ export interface UpstreamGame {
   home_score: number | null;
   away_score: number | null;
 }
+
+// A team as reported by an upstream sports API. `name` is the exact string the
+// same provider writes into a game's home_team/away_team.
+export interface UpstreamTeam {
+  sport: Sport;
+  external_id: string;
+  name: string;
+  abbreviation: string | null;
+  conference: string | null;
+  division: string | null;
+}
