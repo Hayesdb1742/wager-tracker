@@ -29,11 +29,13 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_DB_PASSWORD=
 CFBD_API_KEY=
+ODDS_API_KEY=
 CRON_SECRET=
 ```
 
-Values live in the Supabase dashboard (Settings → API / Database) and
-collegefootballdata.com. Keep a copy in your password manager.
+Values live in the Supabase dashboard (Settings → API / Database),
+collegefootballdata.com and the-odds-api.com. Keep a copy in your password
+manager.
 
 ---
 
@@ -164,8 +166,8 @@ database**, so read the header comment before running it again.
 
 ## 6. Hitting admin API routes from the shell
 
-Most `/api/admin/*` routes need a browser session. `sync-results` also accepts
-the cron secret, which makes it curl-able:
+Most `/api/admin/*` routes need a browser session. `sync-results` and
+`sync-odds` also accept the cron secret, which makes them curl-able:
 
 ```sh
 source .env.local   # or export CRON_SECRET=... by hand
@@ -176,6 +178,18 @@ curl -X POST http://localhost:3000/api/admin/sync-results \
 ```
 
 (Week 21 = pool week 1 of the 2026 season.)
+
+```sh
+curl -X POST http://localhost:3000/api/admin/sync-odds \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"sports": ["NFL"]}'     # omit the body for both sports
+```
+
+Every sport in a `sync-odds` call spends 2 of The Odds API's 500 monthly
+credits, so poll by hand sparingly; pg_cron (`request_odds_sync`) already runs
+the schedule in `supabase/migrations/*_game_lines.sql`. Each run writes an
+`odds_poll_runs` row — check `unmatched` there when a game shows no lines.
 
 ---
 

@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      game_lines: {
+        Row: {
+          away_price: number | null
+          book_updated_at: string
+          bookmaker: string
+          captured_at: string
+          game_id: string
+          home_price: number | null
+          id: number
+          line: number
+          market: string
+          over_price: number | null
+          under_price: number | null
+        }
+        Insert: {
+          away_price?: number | null
+          book_updated_at: string
+          bookmaker: string
+          captured_at?: string
+          game_id: string
+          home_price?: number | null
+          id?: never
+          line: number
+          market: string
+          over_price?: number | null
+          under_price?: number | null
+        }
+        Update: {
+          away_price?: number | null
+          book_updated_at?: string
+          bookmaker?: string
+          captured_at?: string
+          game_id?: string
+          home_price?: number | null
+          id?: never
+          line?: number
+          market?: string
+          over_price?: number | null
+          under_price?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_lines_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       games: {
         Row: {
           away_score: number | null
@@ -27,6 +77,7 @@ export type Database = {
           kickoff_time: string
           last_synced_at: string | null
           manual_resolved: boolean
+          odds_api_event_id: string | null
           resolution_mode: string
           sport: string
           status: string
@@ -45,6 +96,7 @@ export type Database = {
           kickoff_time: string
           last_synced_at?: string | null
           manual_resolved?: boolean
+          odds_api_event_id?: string | null
           resolution_mode?: string
           sport: string
           status?: string
@@ -63,6 +115,7 @@ export type Database = {
           kickoff_time?: string
           last_synced_at?: string | null
           manual_resolved?: boolean
+          odds_api_event_id?: string | null
           resolution_mode?: string
           sport?: string
           status?: string
@@ -160,6 +213,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      odds_poll_runs: {
+        Row: {
+          credits_last: number | null
+          credits_remaining: number | null
+          credits_used: number | null
+          error: string | null
+          events_returned: number
+          id: number
+          matched: number
+          ran_at: string
+          rows_inserted: number
+          sport: string
+          unmatched: Json
+        }
+        Insert: {
+          credits_last?: number | null
+          credits_remaining?: number | null
+          credits_used?: number | null
+          error?: string | null
+          events_returned?: number
+          id?: never
+          matched?: number
+          ran_at?: string
+          rows_inserted?: number
+          sport: string
+          unmatched?: Json
+        }
+        Update: {
+          credits_last?: number | null
+          credits_remaining?: number | null
+          credits_used?: number | null
+          error?: string | null
+          events_returned?: number
+          id?: never
+          matched?: number
+          ran_at?: string
+          rows_inserted?: number
+          sport?: string
+          unmatched?: Json
+        }
+        Relationships: []
       }
       pick_audit_log: {
         Row: {
@@ -476,9 +571,33 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      game_lines_latest: {
+        Row: {
+          away_price: number | null
+          book_updated_at: string | null
+          bookmaker: string | null
+          captured_at: string | null
+          game_id: string | null
+          home_price: number | null
+          id: number | null
+          line: number | null
+          market: string | null
+          over_price: number | null
+          under_price: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_lines_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      advance_season: { Args: Record<PropertyKey, never>; Returns: Json }
       close_week: { Args: { p_week_id: number }; Returns: undefined }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       grade_pick: {
@@ -491,6 +610,8 @@ export type Database = {
         }
         Returns: string
       }
+      request_odds_sync: { Args: { p_sports: string[] }; Returns: number }
+      request_results_sync: { Args: Record<PropertyKey, never>; Returns: number }
       resolve_game: {
         Args: { p_away_score: number; p_game_id: string; p_home_score: number }
         Returns: undefined
