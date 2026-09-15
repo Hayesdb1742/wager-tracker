@@ -48,17 +48,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/picks", request.url));
   }
 
-  // Admin-only pages require the ADMIN role in JWT app_metadata. They live in the (admin)
-  // route group, so they sit at the top level rather than under /admin. /api/admin/* is
-  // deliberately not listed: those routes check the role themselves, and sync-results
-  // also accepts a CRON_SECRET bearer from pg_cron with no session at all.
-  const ADMIN_PATHS = ["/weeks", "/pick-grid", "/results", "/members"];
-  if (ADMIN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    const role = user?.app_metadata?.role;
-    if (role !== "ADMIN") {
-      return NextResponse.redirect(new URL("/picks", request.url));
-    }
-  }
+  // Admin pages live in the (admin) route group, which adds no URL segment
+  // (/weeks, /results, /pick-grid, /members), so there is no /admin prefix to
+  // gate here. The (admin) layout and each admin page.tsx enforce the ADMIN
+  // role themselves.
 
   return supabaseResponse;
 }

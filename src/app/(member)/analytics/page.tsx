@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { selectedTeam, pickRecord, lockRecord, winPct } from "@/lib/wagers";
+import { selectedTeam, opponentTeam, pickRecord, lockRecord, winPct } from "@/lib/wagers";
 
 type AllTimeStat = {
   member_id: string;
@@ -27,19 +27,46 @@ type TeamTendency = {
   win_pct: number;
 };
 
+type ConferenceTendency = TeamTendency & {
+  conference: string;
+  teams: TeamTendency[];
+};
+
+const UNKNOWN_CONFERENCE = "FCS / Other";
+
+function newTendency(team: string): TeamTendency {
+  return { team, picks: 0, wins: 0, losses: 0, pushes: 0, win_pct: 0 };
+}
+
+/** Count one graded pick into a tally. Per pick, not per game -- a lock is still one opinion. */
+function tally(t: TeamTendency, points: number | null) {
+  t.picks += 1;
+  if (points !== null && points > 0) t.wins += 1;
+  else if (points !== null && points < 0) t.losses += 1;
+  else t.pushes += 1;
+}
+
+function withWinPct<T extends TeamTendency>(t: T): T {
+  const decided = t.wins + t.losses;
+  return { ...t, win_pct: decided > 0 ? Math.round((t.wins / decided) * 100) : 0 };
+}
+
+const byPicks = (a: TeamTendency, b: TeamTendency) => b.picks - a.picks || a.team.localeCompare(b.team);
+
 export default async function AnalyticsPage() {
   const admin = createAdminClient();
 
-  const [profilesRes, scoresRes, picksRes, seasonsRes] = await Promise.all([
+  const [profilesRes, scoresRes, picksRes, teamsRes] = await Promise.all([
     admin.from("profiles").select("id, display_name").eq("is_active", true),
     admin.from("weekly_scores").select("member_id, total, week_id, weeks(season_id, status)"),
-    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, is_loty, points, games(home_team, away_team, winner, status)").not("points", "is", null),
-    admin.from("seasons").select("id, name, year").order("year", { ascending: false }),
+    admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, is_loty, points, games(sport, home_team, away_team, winner, status)").not("points", "is", null),
+    admin.from("teams").select("sport, name, conference, division"),
   ]);
 
   const profiles = profilesRes.data ?? [];
   const scores = scoresRes.data ?? [];
   const picks = picksRes.data ?? [];
+  const teams = teamsRes.data ?? [];
 
   // Build all-time standings
   const statsMap = new Map<string, AllTimeStat>();
@@ -116,30 +143,62 @@ export default async function AnalyticsPage() {
 
   // League-wide team tendencies. Per pick, not per game -- see the member stats page: this
   // measures how often the league is right about a team, which a lock does not change.
+  //
+  // Two tallies from one pass: the side the league took, and the side it faded. A win in
+  // the faded table means the league was right to bet against that team.
   const teamMap = new Map<string, TeamTendency>();
+  const againstMap = new Map<string, TeamTendency>();
   for (const pick of picks) {
     const game = pick.games;
     if (!game || game.status !== "FINAL") continue;
     // A total is not a bet on a team, so it has no place in team tendencies.
     const teamName = selectedTeam(pick, game);
-    if (!teamName) continue;
-    if (!teamMap.has(teamName)) {
-      teamMap.set(teamName, { team: teamName, picks: 0, wins: 0, losses: 0, pushes: 0, win_pct: 0 });
-    }
-    const t = teamMap.get(teamName)!;
-    t.picks += 1;
-    if (pick.points !== null && pick.points > 0) t.wins += 1;
-    else if (pick.points !== null && pick.points < 0) t.losses += 1;
-    else t.pushes += 1;
+    const opponentName = opponentTeam(pick, game);
+    if (!teamName || !opponentName) continue;
+
+    // Keys carry the sport so a CFB and NFL team sharing a name cannot merge; the display
+    // name is still just the team.
+    const teamKey = `${game.sport}:${teamName}`;
+    if (!teamMap.has(teamKey)) teamMap.set(teamKey, newTendency(teamName));
+    tally(teamMap.get(teamKey)!, pick.points);
+
+    const opponentKey = `${game.sport}:${opponentName}`;
+    if (!againstMap.has(opponentKey)) againstMap.set(opponentKey, newTendency(opponentName));
+    tally(againstMap.get(opponentKey)!, pick.points);
   }
 
-  const teamTendencies = Array.from(teamMap.values())
-    .map((t) => {
-      const decided = t.wins + t.losses;
-      return { ...t, win_pct: decided > 0 ? Math.round((t.wins / decided) * 100) : 0 };
-    })
-    .sort((a, b) => b.picks - a.picks)
-    .slice(0, 20);
+  const teamTendencies = Array.from(teamMap.values()).map(withWinPct).sort(byPicks).slice(0, 20);
+  const pickedAgainst = Array.from(againstMap.values()).map(withWinPct).sort(byPicks).slice(0, 20);
+
+  // Roll the picked-for tally up by conference. The teams table is the lookup; a team it does
+  // not know (an FCS opponent, a stray seed row) lands in "FCS / Other" rather than vanishing.
+  // The NFL groups by division -- AFC/NFC is two buckets of sixteen, which says nothing.
+  const conferenceByTeam = new Map<string, string>();
+  for (const t of teams) {
+    const group = t.sport === "NFL" ? t.division ?? t.conference : t.conference;
+    if (group) conferenceByTeam.set(`${t.sport}:${t.name}`, group);
+  }
+  const conferenceMap = new Map<string, ConferenceTendency>();
+  for (const [key, t] of teamMap) {
+    const conference = conferenceByTeam.get(key) ?? UNKNOWN_CONFERENCE;
+    if (!conferenceMap.has(conference)) {
+      conferenceMap.set(conference, { ...newTendency(conference), conference, teams: [] });
+    }
+    const c = conferenceMap.get(conference)!;
+    c.picks += t.picks;
+    c.wins += t.wins;
+    c.losses += t.losses;
+    c.pushes += t.pushes;
+    c.teams.push(t);
+  }
+  const conferences = Array.from(conferenceMap.values())
+    .map((c) => ({ ...withWinPct(c), teams: c.teams.map(withWinPct).sort(byPicks) }))
+    // The catch-all is not a conference -- it sits last however many picks it holds.
+    .sort((a, b) => {
+      if (a.conference === UNKNOWN_CONFERENCE) return 1;
+      if (b.conference === UNKNOWN_CONFERENCE) return -1;
+      return byPicks(a, b);
+    });
 
   return (
     <div>
@@ -208,42 +267,117 @@ export default async function AnalyticsPage() {
         )}
       </section>
 
-      {/* League-wide team tendencies */}
+      {/* League-wide team tendencies: the sides taken, and the sides faded */}
+      <div className="grid gap-8 lg:grid-cols-2 mb-8">
+        <section>
+          <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Most-Picked Teams (League)</h2>
+          <p className="text-xs text-slate-500 mb-3">Teams the league bets on. A win here means the team covered.</p>
+          {teamTendencies.length === 0 ? (
+            <p className="text-sm text-slate-400">No resolved games yet.</p>
+          ) : (
+            <TeamTable rows={teamTendencies} />
+          )}
+        </section>
+
+        <section>
+          <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Most-Picked-Against Teams (League)</h2>
+          <p className="text-xs text-slate-500 mb-3">Teams the league bets against. A win here means the fade paid.</p>
+          {pickedAgainst.length === 0 ? (
+            <p className="text-sm text-slate-400">No resolved games yet.</p>
+          ) : (
+            <TeamTable rows={pickedAgainst} />
+          )}
+        </section>
+      </div>
+
+      {/* Most-picked teams, rolled up by conference */}
       <section>
-        <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Most-Picked Teams (League)</h2>
-        {teamTendencies.length === 0 ? (
+        <h2 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Most-Picked Teams by Conference</h2>
+        {conferences.length === 0 ? (
           <p className="text-sm text-slate-400">No resolved games yet.</p>
         ) : (
           <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-700 bg-slate-800 text-xs font-bold text-slate-300 uppercase tracking-wide">
-                  <th className="px-4 py-2 text-left">Team</th>
+                  <th className="px-4 py-2 text-left">Conference</th>
                   <th className="px-4 py-2 text-center">Picks</th>
                   <th className="px-4 py-2 text-center">W-L-P</th>
                   <th className="px-4 py-2 text-center">Win %</th>
                 </tr>
               </thead>
-              <tbody>
-                {teamTendencies.map((t) => (
-                  <tr key={t.team} className="border-b border-slate-800 last:border-0 hover:bg-slate-800/70">
-                    <td className="px-4 py-2.5 font-semibold text-white">{t.team}</td>
-                    <td className="px-4 py-2.5 text-center text-slate-300">{t.picks}</td>
-                    <td className="px-4 py-2.5 text-center text-slate-300 tabular-nums">
-                      {t.wins}–{t.losses}{t.pushes > 0 ? `–${t.pushes}` : ""}
+              {conferences.map((c) => (
+                <tbody key={c.conference} className="border-b border-slate-800 last:border-0">
+                  <tr className="bg-slate-800/40">
+                    <td className="px-4 py-2.5 font-bold text-white">
+                      {c.conference}
+                      <span className="ml-2 text-xs font-normal text-slate-500">{c.teams.length} {c.teams.length === 1 ? "team" : "teams"}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center font-semibold text-slate-200">{c.picks}</td>
+                    <td className="px-4 py-2.5 text-center font-semibold text-slate-200 tabular-nums">
+                      {c.wins}–{c.losses}{c.pushes > 0 ? `–${c.pushes}` : ""}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className={`font-medium tabular-nums ${t.win_pct >= 60 ? "text-emerald-400" : t.win_pct >= 50 ? "text-slate-100" : "text-red-400"}`}>
-                        {t.win_pct}%
-                      </span>
+                      <WinPct value={c.win_pct} />
                     </td>
                   </tr>
-                ))}
-              </tbody>
+                  {c.teams.map((t) => (
+                    <tr key={t.team} className="hover:bg-slate-800/70">
+                      <td className="pl-8 pr-4 py-2 text-slate-300">{t.team}</td>
+                      <td className="px-4 py-2 text-center text-slate-400">{t.picks}</td>
+                      <td className="px-4 py-2 text-center text-slate-400 tabular-nums">
+                        {t.wins}–{t.losses}{t.pushes > 0 ? `–${t.pushes}` : ""}
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        <WinPct value={t.win_pct} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              ))}
             </table>
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function WinPct({ value }: { value: number }) {
+  return (
+    <span className={`font-medium tabular-nums ${value >= 60 ? "text-emerald-400" : value >= 50 ? "text-slate-100" : "text-red-400"}`}>
+      {value}%
+    </span>
+  );
+}
+
+function TeamTable({ rows }: { rows: TeamTendency[] }) {
+  return (
+    <div className="bg-slate-900 border border-slate-700 shadow-lg shadow-black/30 rounded-xl overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-700 bg-slate-800 text-xs font-bold text-slate-300 uppercase tracking-wide">
+            <th className="px-4 py-2 text-left">Team</th>
+            <th className="px-4 py-2 text-center">Picks</th>
+            <th className="px-4 py-2 text-center">W-L-P</th>
+            <th className="px-4 py-2 text-center">Win %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((t) => (
+            <tr key={t.team} className="border-b border-slate-800 last:border-0 hover:bg-slate-800/70">
+              <td className="px-4 py-2.5 font-semibold text-white">{t.team}</td>
+              <td className="px-4 py-2.5 text-center text-slate-300">{t.picks}</td>
+              <td className="px-4 py-2.5 text-center text-slate-300 tabular-nums">
+                {t.wins}–{t.losses}{t.pushes > 0 ? `–${t.pushes}` : ""}
+              </td>
+              <td className="px-4 py-2.5 text-center">
+                <WinPct value={t.win_pct} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

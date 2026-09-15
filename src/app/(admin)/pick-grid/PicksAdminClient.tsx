@@ -68,7 +68,7 @@ export function PicksAdminClient({ weeks, selectedWeek, games, members, pickMap:
   };
 
   const handleWeekChange = (weekId: string) => {
-    router.push(`/admin/picks?week=${weekId}`);
+    router.push(`/pick-grid?week=${weekId}`);
   };
 
   const activePick = activeCell ? pickMap[activeCell.memberId]?.[activeCell.gameId] : null;
