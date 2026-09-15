@@ -64,6 +64,13 @@ export function selectedTeam(wager: Wager, game: Matchup): string | null {
   return null;
 }
 
+/** The team on the other side -- the one the wager is against -- or null for a total. */
+export function opponentTeam(wager: Wager, game: Matchup): string | null {
+  if (wager.selection === "HOME") return game.away_team;
+  if (wager.selection === "AWAY") return game.home_team;
+  return null;
+}
+
 /**
  * The wager as the member would say it out loud:
  *   "Michigan -3.5"   "Texas ML"   "Over 52.5"

@@ -231,17 +231,30 @@ export function WeeksClient({ seasons, currentSeason, weeks: initialWeeks }: Pro
       {reopenConfirmId && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl shadow-black/60">
-            <h2 className="font-semibold text-lg mb-2">Reopen week?</h2>
-            <p className="text-sm text-slate-300 mb-4">
-              Forfeit and LOTW penalties will be reversed and recalculated when
-              the week is closed again.
-            </p>
+            {/* An UPCOMING week has never been scored, so there is nothing to reverse. */}
+            {weeks.find((w) => w.id === reopenConfirmId)?.status === "UPCOMING" ? (
+              <>
+                <h2 className="font-semibold text-lg mb-2">Open week?</h2>
+                <p className="text-sm text-slate-300 mb-4">
+                  Members will be able to enter picks. The current OPEN week, if
+                  any, should be closed first &mdash; the picks page only shows one.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="font-semibold text-lg mb-2">Reopen week?</h2>
+                <p className="text-sm text-slate-300 mb-4">
+                  Forfeit and LOTW penalties will be reversed and recalculated when
+                  the week is closed again.
+                </p>
+              </>
+            )}
             <div className="flex gap-3">
               <button
                 onClick={() => handleReopen(reopenConfirmId)}
                 className="bg-amber-400 text-slate-950 px-4 py-2 rounded-lg text-sm font-semibold shadow-lg shadow-amber-500/25 transition-colors hover:bg-amber-300"
               >
-                Reopen week
+                {weeks.find((w) => w.id === reopenConfirmId)?.status === "UPCOMING" ? "Open week" : "Reopen week"}
               </button>
               <button
                 onClick={() => setReopenConfirmId(null)}
@@ -307,11 +320,11 @@ export function WeeksClient({ seasons, currentSeason, weeks: initialWeeks }: Pro
                         onClick={() => setReopenConfirmId(week.id)}
                         className="text-xs text-slate-300 hover:text-amber-300 border border-slate-600 bg-slate-800 rounded px-2 py-1 font-semibold transition-colors hover:bg-slate-700"
                       >
-                        Reopen
+                        {week.status === "UPCOMING" ? "Open" : "Reopen"}
                       </button>
                     )}
                     <a
-                      href={`/admin/results?week=${week.id}`}
+                      href={`/results?week=${week.id}`}
                       className="ml-2 text-xs font-semibold text-sky-400 hover:text-sky-300 hover:underline"
                     >
                       Results

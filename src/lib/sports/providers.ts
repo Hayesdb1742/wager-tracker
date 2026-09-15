@@ -1,4 +1,4 @@
-import { Sport, UpstreamGame, UpstreamStatus } from "./types";
+import { Sport, UpstreamGame, UpstreamStatus, UpstreamTeam } from "./types";
 
 // CFB: cfbd (api.collegefootballdata.com) when CFBD_API_KEY is set, otherwise
 // ESPN's unofficial college-football scoreboard (no key required).
@@ -69,6 +69,20 @@ export async function fetchCfbdSeason(year: number): Promise<UpstreamGame[]> {
   return games.map(mapCfbdGame);
 }
 
+// The FBS membership for a season. `school` is the same string cfbd puts in a
+// game's homeTeam/awayTeam, so it joins straight onto games.home_team.
+export async function fetchCfbdTeams(year: number): Promise<UpstreamTeam[]> {
+  const teams = await fetchCfbd(`/teams/fbs?year=${year}`);
+  return teams.map((t) => ({
+    sport: "CFB",
+    external_id: String(t.id),
+    name: pick<string>(t, "school") ?? "Unknown",
+    abbreviation: pick<string>(t, "abbreviation") ?? null,
+    conference: pick<string>(t, "conference") ?? null,
+    division: pick<string>(t, "division") ?? null,
+  }));
+}
+
 // ---------------------------------------------------------------- ESPN
 
 const ESPN_PATH: Record<Sport, string> = {
@@ -135,6 +149,32 @@ export function fetchEspnDateRange(
   end: string
 ): Promise<UpstreamGame[]> {
   return fetchEspnScoreboard(sport, `dates=${start}-${end}`);
+}
+
+// ESPN's groups tree: conference -> division -> teams. displayName is what the
+// scoreboard puts on a game, so it joins straight onto games.home_team.
+export async function fetchEspnNflTeams(): Promise<UpstreamTeam[]> {
+  const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/groups`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`ESPN API error: ${res.status}`);
+  const data = await res.json();
+
+  const teams: UpstreamTeam[] = [];
+  for (const conference of (data.groups ?? []) as JsonRecord[]) {
+    for (const division of (conference.children ?? []) as JsonRecord[]) {
+      for (const team of (division.teams ?? []) as JsonRecord[]) {
+        teams.push({
+          sport: "NFL",
+          external_id: `espn-${team.id}`,
+          name: (team.displayName ?? team.name ?? "Unknown") as string,
+          abbreviation: (team.abbreviation as string | undefined) ?? null,
+          conference: (conference.abbreviation as string | undefined) ?? null,
+          division: (division.name as string | undefined) ?? null,
+        });
+      }
+    }
+  }
+  return teams;
 }
 
 // ---------------------------------------------------------------- public API
