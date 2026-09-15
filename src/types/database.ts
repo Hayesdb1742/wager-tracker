@@ -450,7 +450,9 @@ export type Database = {
       teams: {
         Row: {
           abbreviation: string | null
+          conference: string | null
           created_at: string
+          division: string | null
           external_id: string | null
           id: number
           name: string
@@ -458,7 +460,9 @@ export type Database = {
         }
         Insert: {
           abbreviation?: string | null
+          conference?: string | null
           created_at?: string
+          division?: string | null
           external_id?: string | null
           id?: number
           name: string
@@ -466,7 +470,9 @@ export type Database = {
         }
         Update: {
           abbreviation?: string | null
+          conference?: string | null
           created_at?: string
+          division?: string | null
           external_id?: string | null
           id?: number
           name?: string

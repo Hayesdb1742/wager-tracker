@@ -48,13 +48,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/picks", request.url));
   }
 
-  // Admin-only routes require the ADMIN role in JWT app_metadata
-  if (pathname.startsWith("/admin")) {
-    const role = user?.app_metadata?.role;
-    if (role !== "ADMIN") {
-      return NextResponse.redirect(new URL("/picks", request.url));
-    }
-  }
+  // Admin pages live in the (admin) route group, which adds no URL segment
+  // (/weeks, /results, /pick-grid, /members), so there is no /admin prefix to
+  // gate here. Each admin page.tsx enforces the ADMIN role itself.
 
   return supabaseResponse;
 }
