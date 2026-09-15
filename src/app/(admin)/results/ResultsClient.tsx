@@ -187,7 +187,7 @@ export function ResultsClient({ weeks, currentWeek, games: initialGames }: Props
         <select
           className="rounded-lg px-3 py-2 text-sm font-medium border border-slate-600 bg-slate-800 text-white focus:border-sky-400 focus:outline-none"
           value={currentWeek?.id ?? ""}
-          onChange={(e) => router.push(`/admin/results?week=${e.target.value}`)}
+          onChange={(e) => router.push(`/results?week=${e.target.value}`)}
         >
           {weeks.map((w) => (
             <option key={w.id} value={w.id}>{w.season_year} Week {w.week_number} — {w.status}</option>

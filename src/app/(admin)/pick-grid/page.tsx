@@ -1,12 +1,18 @@
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveSeasonId } from "@/lib/seasons";
 import { PicksAdminClient } from "./PicksAdminClient";
+import { redirect } from "next/navigation";
 
 export default async function AdminPicksPage({
   searchParams,
 }: {
   searchParams: Promise<{ week?: string }>;
 }) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || user.app_metadata?.role !== "ADMIN") redirect("/picks");
+
   const { week: weekParam } = await searchParams;
   const admin = createAdminClient();
 
