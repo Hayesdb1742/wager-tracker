@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isAdminOrCron } from "@/lib/cron-auth";
 import { syncResultsForWeek } from "@/lib/sports/sync";
 
 // POST /api/admin/sync-results
@@ -11,18 +11,8 @@ import { syncResultsForWeek } from "@/lib/sports/sync";
 //
 // Auth: admin session, or `Authorization: Bearer ${CRON_SECRET}` so pg_cron
 // (via pg_net) can call it without a user session.
-async function isAuthorized(request: NextRequest): Promise<boolean> {
-  const cronSecret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get("authorization");
-  if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
-
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  return user?.app_metadata?.role === "ADMIN";
-}
-
 export async function POST(request: NextRequest) {
-  if (!(await isAuthorized(request))) {
+  if (!(await isAdminOrCron(request))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
