@@ -71,6 +71,13 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
+    // A double-tap on Continue sends two POSTs; the first one wins and sets
+    // the session, the second sees a consumed token. If this browser already
+    // holds a session for someone, send them on rather than to "expired".
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      return NextResponse.redirect(`${origin}${next}`, 303);
+    }
     return NextResponse.redirect(`${origin}/login?expired=1`, 303);
   }
 
