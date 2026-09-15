@@ -311,7 +311,7 @@ export function WeeksClient({ seasons, currentSeason, weeks: initialWeeks }: Pro
                       </button>
                     )}
                     <a
-                      href={`/admin/results?week=${week.id}`}
+                      href={`/results?week=${week.id}`}
                       className="ml-2 text-xs font-semibold text-sky-400 hover:text-sky-300 hover:underline"
                     >
                       Results

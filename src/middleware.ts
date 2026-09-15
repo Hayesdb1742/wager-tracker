@@ -48,8 +48,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/picks", request.url));
   }
 
-  // Admin-only routes require the ADMIN role in JWT app_metadata
-  if (pathname.startsWith("/admin")) {
+  // Admin-only pages require the ADMIN role in JWT app_metadata. They live in the (admin)
+  // route group, so they sit at the top level rather than under /admin. /api/admin/* is
+  // deliberately not listed: those routes check the role themselves, and sync-results
+  // also accepts a CRON_SECRET bearer from pg_cron with no session at all.
+  const ADMIN_PATHS = ["/weeks", "/pick-grid", "/results", "/members"];
+  if (ADMIN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const role = user?.app_metadata?.role;
     if (role !== "ADMIN") {
       return NextResponse.redirect(new URL("/picks", request.url));
