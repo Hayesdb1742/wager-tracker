@@ -42,6 +42,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  // Someone already signed in has no business on the login page -- this is
+  // where a member ends up after a stray "expired link" redirect.
+  if (user && pathname.startsWith("/login")) {
+    return NextResponse.redirect(new URL("/picks", request.url));
+  }
+
   // Admin-only routes require the ADMIN role in JWT app_metadata
   if (pathname.startsWith("/admin")) {
     const role = user?.app_metadata?.role;
