@@ -50,7 +50,8 @@ export async function middleware(request: NextRequest) {
 
   // Admin pages live in the (admin) route group, which adds no URL segment
   // (/weeks, /results, /pick-grid, /members), so there is no /admin prefix to
-  // gate here. Each admin page.tsx enforces the ADMIN role itself.
+  // gate here. The (admin) layout and each admin page.tsx enforce the ADMIN
+  // role themselves.
 
   return supabaseResponse;
 }
