@@ -128,14 +128,16 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
   const lotySpentHere = weekLock?.level === "LOTY";
   const lotySpent = lotySpentHere || lotyUsed !== null;
 
-  const submitPick = useCallback(async (gameId: string, wager: Draft) => {
+  // The lock rides along with the wager: a member who wants this to be their LOTW says so
+  // when they submit, rather than finding the upgrade buttons afterwards.
+  const submitPick = useCallback(async (gameId: string, wager: Draft, lock: LockLevel) => {
     setBusy(gameId);
     setErrors((e) => { const n = { ...e }; delete n[gameId]; return n; });
 
     const res = await fetch("/api/picks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ game_id: gameId, ...wager }),
+      body: JSON.stringify({ game_id: gameId, ...wager, lock }),
     });
     const data = await res.json();
     setBusy(null);
@@ -145,6 +147,7 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
       return;
     }
 
+    // A LOTY stands in place of the week's LOTW, so both flags move together.
     setPicks((prev) => ({
       ...prev,
       [gameId]: {
@@ -153,8 +156,8 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
         selection: wager.selection,
         line: wager.line,
         odds: wager.odds,
-        is_lotw: false,
-        is_loty: false,
+        is_lotw: lock !== "NONE",
+        is_loty: lock === "LOTY",
         overridden_by: null,
         overridden_at: null,
       },
@@ -278,10 +281,10 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
       <div className="mb-4 p-3 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-300 space-y-1">
         <p><span className="font-semibold text-white">Submitting locks a pick in.</span> Build the wager, then press Lock in pick — after that only the commissioner can change it.</p>
         <p>
-          Once a pick is in you can raise it to a <span className="font-semibold text-amber-300">Lock of the Week</span> (×{LOCK_MULTIPLIER.LOTW}, one per week)
-          {" or a "}
-          <span className="font-semibold text-fuchsia-300">Lock of the Year</span> (×{LOCK_MULTIPLIER.LOTY}, one per season).
-          A LOTY stands in for that week&apos;s LOTW, so spending it here uses up both.
+          Pick <span className="font-semibold text-amber-300">LOTW</span> (×{LOCK_MULTIPLIER.LOTW}, one per week)
+          {" or "}
+          <span className="font-semibold text-fuchsia-300">LOTY</span> (×{LOCK_MULTIPLIER.LOTY}, one per season) under Lock before you submit,
+          or raise a pick that&apos;s already in. A LOTY stands in for that week&apos;s LOTW, so spending it here uses up both.
         </p>
       </div>
 
@@ -318,7 +321,7 @@ function GameCard({
   error: string | null;
   weekLockOnAnotherPick: boolean;
   lotyUsedThisSeason: boolean;
-  onSubmit: (gameId: string, wager: Draft) => void;
+  onSubmit: (gameId: string, wager: Draft, lock: LockLevel) => void;
   onLock: (gameId: string, level: LockLevel) => void;
 }) {
   const isSubmitting = busy === game.id;
@@ -329,6 +332,8 @@ function GameCard({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [lineText, setLineText] = useState("");
   const [oddsText, setOddsText] = useState("");
+  // The lock the member wants this pick to carry when it goes in.
+  const [draftLock, setDraftLock] = useState<LockLevel>("NONE");
   // Spending the season's only LOTY takes two clicks. Nothing else here does.
   const [confirmLoty, setConfirmLoty] = useState(false);
 
@@ -346,6 +351,22 @@ function GameCard({
   const lockCtx = { current: level, weekLockOnAnotherPick, lotyUsedThisSeason };
   const lotwRefusal = lockUpgradeError("LOTW", lockCtx);
   const lotyRefusal = lockUpgradeError("LOTY", lockCtx);
+
+  // A lock chosen in the form can stop being available while the member is still typing --
+  // they lock another card, say -- so the draft's lock is only what the rules still allow.
+  const chosenLock: LockLevel =
+    draftLock === "LOTW" && lotwRefusal ? "NONE"
+    : draftLock === "LOTY" && lotyRefusal ? "NONE"
+    : draftLock;
+  const lockOptions: { level: LockLevel; label: string; refusal: string | null }[] = [
+    { level: "NONE", label: "No lock", refusal: null },
+    { level: "LOTW", label: `LOTW ×${LOCK_MULTIPLIER.LOTW}`, refusal: lotwRefusal },
+    { level: "LOTY", label: `LOTY ×${LOCK_MULTIPLIER.LOTY}`, refusal: lotyRefusal },
+  ];
+  const submitLabel =
+    chosenLock === "LOTY" ? "Lock in as LOTY"
+    : chosenLock === "LOTW" ? "Lock in as LOTW"
+    : "Lock in pick";
 
   return (
     <div className={`bg-slate-900 border rounded-xl p-4 shadow-lg shadow-black/30 transition-opacity ${
@@ -544,24 +565,93 @@ function GameCard({
             </label>
           </div>
 
-          {/* Submit. Appears with the first selection — nothing to submit before that — and
-              stays disabled, with the reason beside it, until the wager is complete. */}
+          {/* Lock. Chosen alongside the wager so the LOTW goes in with the pick, not as a
+              second step afterwards. Options the rules refuse stay visible but dead, with
+              the reason as their tooltip and, once, in text. */}
           {selection && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-300">Lock</span>
+              <div className="inline-flex rounded-lg border border-slate-700 bg-slate-800/70 p-0.5">
+                {lockOptions.map(({ level: opt, label, refusal }) => {
+                  const active = chosenLock === opt;
+                  return (
+                    <button
+                      key={opt}
+                      onClick={() => { setDraftLock(opt); setConfirmLoty(false); }}
+                      disabled={isSubmitting || refusal !== null}
+                      title={refusal ?? undefined}
+                      className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-colors ${
+                        refusal
+                          ? "text-slate-500 cursor-not-allowed"
+                          : active && opt === "LOTY"
+                          ? "bg-fuchsia-400 text-slate-950 shadow-md shadow-fuchsia-500/30"
+                          : active && opt === "LOTW"
+                          ? "bg-amber-400 text-slate-950 shadow-md shadow-amber-500/30"
+                          : active
+                          ? "bg-slate-600 text-white"
+                          : "text-slate-300 hover:bg-slate-700 hover:text-white cursor-pointer"
+                      }`}
+                    >
+                      {opt === "LOTY" ? "👑 " : opt === "LOTW" ? "🔒 " : ""}{label}
+                    </button>
+                  );
+                })}
+              </div>
+              {lotwRefusal && lotyRefusal && (
+                <span className="text-xs text-slate-400">{lotwRefusal}</span>
+              )}
+            </div>
+          )}
+
+          {/* Submit. Appears with the first selection — nothing to submit before that — and
+              stays disabled, with the reason beside it, until the wager is complete. A LOTY
+              asks once more before it goes, the same as raising one afterwards does. */}
+          {selection && confirmLoty && draft && (
+            <div className="flex items-center gap-2 flex-wrap text-xs pt-0.5">
+              <span className="text-fuchsia-200 font-medium">Spend your only LOTY on {formatWager(draft, game, true)}?</span>
+              <button
+                onClick={() => { setConfirmLoty(false); onSubmit(game.id, draft, "LOTY"); }}
+                disabled={isSubmitting}
+                className="px-2.5 py-1 rounded-md font-bold bg-fuchsia-400 text-slate-950 hover:bg-fuchsia-300 cursor-pointer"
+              >
+                {isSubmitting ? "Locking in…" : "Yes, lock it in"}
+              </button>
+              <button
+                onClick={() => setConfirmLoty(false)}
+                className="px-2 py-1 rounded-md font-semibold text-slate-300 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {selection && !confirmLoty && (
             <div className="flex items-center gap-3 pt-0.5">
               <button
-                onClick={() => draft && onSubmit(game.id, draft)}
+                onClick={() => {
+                  if (!draft) return;
+                  if (chosenLock === "LOTY") setConfirmLoty(true);
+                  else onSubmit(game.id, draft, chosenLock);
+                }}
                 disabled={!draft || isSubmitting}
                 className={`px-3.5 py-2 rounded-lg text-sm font-bold transition-colors ${
-                  draft && !isSubmitting
-                    ? "bg-sky-500 text-slate-950 hover:bg-sky-400 shadow-md shadow-sky-500/30 cursor-pointer"
-                    : "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
+                  !draft || isSubmitting
+                    ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
+                    : chosenLock === "LOTY"
+                    ? "bg-fuchsia-400 text-slate-950 hover:bg-fuchsia-300 shadow-md shadow-fuchsia-500/30 cursor-pointer"
+                    : chosenLock === "LOTW"
+                    ? "bg-amber-400 text-slate-950 hover:bg-amber-300 shadow-md shadow-amber-500/30 cursor-pointer"
+                    : "bg-sky-500 text-slate-950 hover:bg-sky-400 shadow-md shadow-sky-500/30 cursor-pointer"
                 }`}
               >
-                {isSubmitting ? "Locking in…" : "Lock in pick"}
+                {isSubmitting ? "Locking in…" : submitLabel}
               </button>
               <span className="text-xs">
                 {draft ? (
-                  <span className="text-sky-300 font-semibold">{formatWager(draft, game, true)} — final once submitted</span>
+                  <span className="text-sky-300 font-semibold">
+                    {formatWager(draft, game, true)}
+                    {chosenLock !== "NONE" && ` · ${LOCK_SHORT[chosenLock]} ×${LOCK_MULTIPLIER[chosenLock]}`}
+                    {" — final once submitted"}
+                  </span>
                 ) : (
                   <span className="text-slate-400">
                     {betType === "TOTAL"

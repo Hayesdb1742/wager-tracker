@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lockLevel, lockUpgradeError, type LockLevel } from "@/lib/wagers";
+import { memberLockContext } from "@/lib/locks";
 
 // POST /api/picks/lock
 // Body: { pick_id, level: "LOTW" | "LOTY" }
@@ -63,30 +64,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // What the member has already spent: the week's lock, and the season's one LOTY. A LOTY
-  // reaches its season through weeks, so that one needs the join -- !inner keeps it a
-  // filter rather than a left join.
-  const { data: weekLocks } = await admin
-    .from("picks")
-    .select("id")
-    .eq("member_id", user.id)
-    .eq("week_id", pick.week_id)
-    .eq("is_lotw", true)
-    .neq("id", pick.id);
-
-  const { data: seasonLoty } = await admin
-    .from("picks")
-    .select("id, weeks!inner(season_id)")
-    .eq("member_id", user.id)
-    .eq("is_loty", true)
-    .eq("weeks.season_id", week.season_id)
-    .neq("id", pick.id);
-
-  const refusal = lockUpgradeError(level, {
-    current: lockLevel(pick),
-    weekLockOnAnotherPick: (weekLocks ?? []).length > 0,
-    lotyUsedThisSeason: (seasonLoty ?? []).length > 0,
+  const spent = await memberLockContext(admin, {
+    memberId: user.id,
+    weekId: pick.week_id,
+    seasonId: week.season_id,
+    excludePickId: pick.id,
   });
+
+  const refusal = lockUpgradeError(level, { current: lockLevel(pick), ...spent });
 
   if (refusal) {
     return NextResponse.json({ error: "lock_unavailable", message: refusal }, { status: 409 });
