@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { validateWager } from "@/lib/wagers";
+import { lockUpgradeError, validateWager, type LockLevel } from "@/lib/wagers";
+import { memberLockContext } from "@/lib/locks";
 
+// POST /api/picks
+// Body: { game_id, bet_type, selection, line, odds?, lock?: "LOTW" | "LOTY" }
+//
+// `lock` lets a member make the pick their lock in the same step as submitting it. The
+// same rules as /api/picks/lock apply, and a refused lock refuses the whole pick -- a
+// member who asked for a LOTW should not be left holding a plain pick they can no longer
+// change.
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -10,9 +18,13 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const { game_id, bet_type, selection, line, odds } = body;
+  const lock: LockLevel = body.lock ?? "NONE";
 
   if (!game_id) {
     return NextResponse.json({ error: "game_id required" }, { status: 400 });
+  }
+  if (lock !== "NONE" && lock !== "LOTW" && lock !== "LOTY") {
+    return NextResponse.json({ error: "lock must be LOTW or LOTY" }, { status: 400 });
   }
 
   // Mirrors the CHECK constraints so a bad wager fails readably rather than as a
@@ -59,6 +71,34 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (lock !== "NONE") {
+    const { data: week } = await admin
+      .from("weeks")
+      .select("season_id, status")
+      .eq("id", game.week_id)
+      .single();
+
+    if (!week) return NextResponse.json({ error: "Week not found" }, { status: 404 });
+    if (week.status !== "OPEN") {
+      return NextResponse.json(
+        { error: "week_closed", message: "This week is no longer open." },
+        { status: 409 }
+      );
+    }
+
+    const spent = await memberLockContext(admin, {
+      memberId: user.id,
+      weekId: game.week_id,
+      seasonId: week.season_id,
+    });
+    const refusal = lockUpgradeError(lock, { current: "NONE", ...spent });
+    if (refusal) {
+      return NextResponse.json({ error: "lock_unavailable", message: refusal }, { status: 409 });
+    }
+  }
+
+  // is_lotw goes true at both lock levels: a LOTY stands in place of the week's LOTW
+  // (picks_loty_implies_lotw).
   const { data, error } = await admin
     .from("picks")
     .insert({
@@ -69,6 +109,8 @@ export async function POST(request: NextRequest) {
       selection,
       line,
       odds: odds ?? null,
+      is_lotw: lock !== "NONE",
+      is_loty: lock === "LOTY",
     })
     .select()
     .single();
