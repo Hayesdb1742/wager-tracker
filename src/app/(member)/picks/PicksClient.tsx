@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import type { LiveBoard, LivePick } from "@/lib/live";
 import {
   BET_TYPES,
   BET_TYPE_LABELS,
@@ -69,7 +70,13 @@ interface Props {
   marketLines: MarketLines;
   lotyUsed: LotyUsed;
   memberId: string;
+  /** Games underway at first paint, with everyone's picks on them. Refreshed from /api/live. */
+  initialLive: LiveBoard;
 }
+
+// A game's status only moves on the 15-minute results sync, and a kickoff is on the clock,
+// so once a minute keeps the in-play cards honest without hammering the API.
+const LIVE_REFRESH_MS = 60_000;
 
 /**
  * Parse a line the member is still typing. Returns null for anything incomplete — a lone
@@ -182,10 +189,42 @@ function buildDraft(
   return { bet_type: betType, selection, line, odds: odds.value };
 }
 
-export function PicksClient({ week, games, initialPickMap, marketLines, lotyUsed }: Props) {
+export function PicksClient({ week, games, initialPickMap, marketLines, lotyUsed, initialLive }: Props) {
   const [picks, setPicks] = useState(initialPickMap);
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Who is on each game in play. A game absent from the map is not live.
+  const [live, setLive] = useState(initialLive);
+  const livePicksByGame = useMemo(
+    () => new Map(live.games.map((g) => [g.id, g.picks])),
+    [live]
+  );
+
+  // Poll on an interval, and straight away when the tab comes back into view -- someone
+  // flipping over from the broadcast wants the board as it is now. A failed refresh keeps
+  // what is already on screen; the next tick tries again.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const res = await fetch("/api/live");
+        if (!res.ok) return;
+        const next: LiveBoard = await res.json();
+        if (!cancelled) setLive(next);
+      } catch {
+        // keep the last good board
+      }
+    };
+    const timer = setInterval(refresh, LIVE_REFRESH_MS);
+    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   const cfbGames = games.filter((g) => g.sport === "CFB");
   const nflGames = games.filter((g) => g.sport === "NFL");
@@ -277,9 +316,34 @@ export function PicksClient({ week, games, initialPickMap, marketLines, lotyUsed
     { key: "NFL", label: "NFL", list: nflGames, required: week.required_nfl_picks },
     { key: "CFB", label: "CFB", list: cfbGames, required: week.required_cfb_picks },
   ];
-  const shown = sportTabs.find((t) => t.key === sport)?.list ?? [];
+  const shownAll = sportTabs.find((t) => t.key === sport)?.list ?? [];
+  // Live games lead, then the ones still to kick off; a finished game has nothing left to
+  // pick, so it sinks to the bottom. Each group keeps its kickoff order. "Live" is what the
+  // board says, not games.status -- there is no LIVE status, a game stays SCHEDULED until
+  // it is FINAL.
+  const inPlay = shownAll.filter((g) => livePicksByGame.has(g.id));
+  const upcoming = shownAll.filter((g) => !livePicksByGame.has(g.id) && g.status !== "FINAL");
+  const shown = [...inPlay, ...upcoming];
+  const finished = shownAll.filter((g) => g.status === "FINAL");
 
   const weekLockGame = weekLock ? games.find((g) => g.id === weekLock.gameId) : undefined;
+
+  const renderGame = (game: Game) => (
+    <GameCard
+      key={game.id}
+      game={game}
+      pick={picks[game.id] ?? null}
+      market={marketLines[game.id]}
+      kickedOff={isKickedOff(game)}
+      livePicks={livePicksByGame.get(game.id) ?? null}
+      busy={busy}
+      error={errors[game.id] ?? errors[`lock-${game.id}`] ?? null}
+      weekLockOnAnotherPick={weekLock !== null && weekLock.gameId !== game.id}
+      lotyUsedThisSeason={lotySpent}
+      onSubmit={submitPick}
+      onLock={setLock}
+    />
+  );
 
   return (
     <div>
@@ -368,36 +432,33 @@ export function PicksClient({ week, games, initialPickMap, marketLines, lotyUsed
       </div>
 
       <div className="space-y-2">
-        {shown.map((game) => {
-          const pick = picks[game.id] ?? null;
-          return (
-            <GameCard
-              key={game.id}
-              game={game}
-              pick={pick}
-              market={marketLines[game.id]}
-              kickedOff={isKickedOff(game)}
-              busy={busy}
-              error={errors[game.id] ?? errors[`lock-${game.id}`] ?? null}
-              weekLockOnAnotherPick={weekLock !== null && weekLock.gameId !== game.id}
-              lotyUsedThisSeason={lotySpent}
-              onSubmit={submitPick}
-              onLock={setLock}
-            />
-          );
-        })}
+        {shown.map(renderGame)}
       </div>
+
+      {finished.length > 0 && (
+        <>
+          <div className="flex items-center gap-3 mt-6 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Final</span>
+            <div className="flex-1 h-px bg-slate-800" />
+          </div>
+          <div className="space-y-2">
+            {finished.map(renderGame)}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
 function GameCard({
-  game, pick, market, kickedOff, busy, error, weekLockOnAnotherPick, lotyUsedThisSeason, onSubmit, onLock,
+  game, pick, market, kickedOff, livePicks, busy, error, weekLockOnAnotherPick, lotyUsedThisSeason, onSubmit, onLock,
 }: {
   game: Game;
   pick: PickInfo | null;
   market: GameMarket | undefined;
   kickedOff: boolean;
+  /** Everyone's picks while the game is in play; null once it is over (or before kickoff). */
+  livePicks: LivePick[] | null;
   busy: string | null;
   error: string | null;
   weekLockOnAnotherPick: boolean;
@@ -436,6 +497,10 @@ function GameCard({
   const draft = buildDraft(betType, selection, lineText, oddsText);
   const showScores = game.status === "FINAL";
   const level = pick ? lockLevel(pick) : "NONE";
+  // In play: kicked off and not yet final. The server decides this (see getLiveBoard); the
+  // card only reads it, so a game the clock says has started but the board does not list
+  // stays plain "Locked" rather than guessing.
+  const isLive = livePicks !== null;
 
   const lockCtx = { current: level, weekLockOnAnotherPick, lotyUsedThisSeason };
   const lotwRefusal = lockUpgradeError("LOTW", lockCtx);
@@ -459,7 +524,8 @@ function GameCard({
 
   return (
     <div className={`bg-slate-900 border rounded-xl p-4 shadow-lg shadow-black/30 transition-opacity ${
-      kickedOff ? "border-slate-700 opacity-60"
+      isLive ? "border-red-500/50"
+      : kickedOff ? "border-slate-700 opacity-60"
       : level === "LOTY" ? "border-fuchsia-500/70"
       : level === "LOTW" ? "border-amber-500/60"
       : "border-slate-700"
@@ -470,7 +536,12 @@ function GameCard({
           {" · "}
           {new Date(game.kickoff_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
-        {kickedOff ? (
+        {isLive ? (
+          <span className="text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-1.5 bg-red-500/15 text-red-300 ring-1 ring-red-500/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+            Live
+          </span>
+        ) : kickedOff ? (
           <span className={`text-xs px-2 py-0.5 rounded font-medium ${
             game.status === "FINAL"
               ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
@@ -767,6 +838,51 @@ function GameCard({
       )}
 
       {error && <p className="mt-2 text-xs font-medium text-red-400">{error}</p>}
+
+      {livePicks && <InPlayList picks={livePicks} game={game} />}
+    </div>
+  );
+}
+
+/**
+ * Everyone's picks on a game in play. Safe to show because the game has kicked off, so
+ * these are all revealed already (the leaderboard shows the same). A lock stands out with
+ * the LOTW/LOTY badge; everything else about a row is the plain name and wager.
+ */
+function InPlayList({ picks, game }: { picks: LivePick[]; game: Game }) {
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-800">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">
+        In play · {picks.length === 0 ? "no one has this game" : `${picks.length} on this game`}
+      </div>
+      {picks.length > 0 && (
+        <ul className="divide-y divide-slate-800/70 rounded-lg bg-slate-950/50 ring-1 ring-slate-800">
+          {picks.map((lp) => {
+            // Read the level, not is_lotw alone -- a LOTY carries is_lotw too.
+            const lock = lockLevel(lp);
+            return (
+              <li
+                key={lp.member_id}
+                className={`flex items-center gap-3 px-3 py-1.5 text-sm ${
+                  lock === "LOTY" ? "bg-fuchsia-500/5" : lock === "LOTW" ? "bg-amber-500/5" : ""
+                }`}
+              >
+                <span className="font-semibold text-white w-24 truncate shrink-0">{lp.display_name}</span>
+                <span className="flex-1 min-w-0 text-slate-200 truncate">{formatWager(lp, game, true)}</span>
+                {lock !== "NONE" && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-semibold shrink-0 ${
+                    lock === "LOTY"
+                      ? "bg-fuchsia-500/20 text-fuchsia-300 ring-1 ring-fuchsia-500/40"
+                      : "bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40"
+                  }`}>
+                    {LOCK_SHORT[lock]}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
