@@ -6,10 +6,10 @@ import { matchEvents, EventMatch, MatchableGame } from "./match";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-// Games earlier than this have kicked off and their lines are closed; later than this
-// no book has posted a line yet. Slightly wider than request_odds_sync()'s guard so a
-// game the guard counted is always a candidate here.
-const LOOKBACK_MS = 6 * 3600 * 1000;
+// A game that has kicked off is done here: the books switch to in-play numbers, and the
+// last pre-kick row is the closing line we want to keep. Later than the lookahead no book
+// has posted a line yet. Wider than request_odds_sync()'s guard so a game the guard
+// counted is always a candidate here.
 const LOOKAHEAD_MS = 14 * 24 * 3600 * 1000;
 
 type LineRow = {
@@ -131,7 +131,7 @@ export async function syncOddsForSport(admin: AdminClient, sport: Sport): Promis
       .in("week_id", (weeks ?? []).map((w) => w.id))
       .eq("sport", sport)
       .eq("status", "SCHEDULED")
-      .gte("kickoff_time", new Date(now - LOOKBACK_MS).toISOString())
+      .gt("kickoff_time", new Date(now).toISOString())
       .lte("kickoff_time", new Date(now + LOOKAHEAD_MS).toISOString());
     if (gamesError) throw new Error(gamesError.message);
 
@@ -144,11 +144,15 @@ export async function syncOddsForSport(admin: AdminClient, sport: Sport): Promis
       odds_api_event_id: g.odds_api_event_id,
     }));
 
-    const { events, credits } = await fetchOdds(sport);
-    summary.events_returned = events.length;
+    const { events: allEvents, credits } = await fetchOdds(sport);
+    summary.events_returned = allEvents.length;
     summary.credits_last = credits.last;
     summary.credits_remaining = credits.remaining;
     creditsUsed = credits.used;
+
+    // The API keeps returning a game while it is being played, with live lines. Those
+    // are neither wanted as rows nor worth a place in the unmatched log.
+    const events = allEvents.filter((e) => new Date(e.commence_time).getTime() > now);
 
     const { matched, unmatched } = matchEvents(candidates, events);
     summary.matched = matched.size;
