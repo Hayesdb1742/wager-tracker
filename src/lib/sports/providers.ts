@@ -141,14 +141,23 @@ function fetchEspnWeek(sport: Sport, year: number, week: number): Promise<Upstre
   return fetchEspnScoreboard(sport, `dates=${year}&seasontype=2&week=${week}`);
 }
 
-// Date range form: YYYYMMDD-YYYYMMDD. Used by results sync so callers don't
-// need to reverse-map pool weeks to upstream week numbers.
-export function fetchEspnDateRange(
+// One scoreboard call per day between start and end (YYYYMMDD, inclusive).
+// ESPN stopped accepting the `dates=START-END` range form in Sep 2026 (400),
+// so results sync walks the days itself; callers still don't need to
+// reverse-map pool weeks to upstream week numbers.
+export async function fetchEspnDateRange(
   sport: Sport,
   start: string,
   end: string
 ): Promise<UpstreamGame[]> {
-  return fetchEspnScoreboard(sport, `dates=${start}-${end}`);
+  const toDate = (s: string) =>
+    new Date(Date.UTC(Number(s.slice(0, 4)), Number(s.slice(4, 6)) - 1, Number(s.slice(6, 8))));
+  const games: UpstreamGame[] = [];
+  for (let d = toDate(start); d <= toDate(end); d.setUTCDate(d.getUTCDate() + 1)) {
+    const day = d.toISOString().slice(0, 10).replace(/-/g, "");
+    games.push(...(await fetchEspnScoreboard(sport, `dates=${day}`)));
+  }
+  return games;
 }
 
 // ESPN's groups tree: conference -> division -> teams. displayName is what the
