@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveSeasonId } from "@/lib/seasons";
 import { formatMatchup } from "@/lib/wagers";
 import { DISPLAY_BOOKS, shapeMarketLines } from "@/lib/odds/display";
+import { getLiveBoard } from "@/lib/live";
 import { PicksClient } from "./PicksClient";
 import { redirect } from "next/navigation";
 
@@ -82,6 +83,9 @@ export default async function PicksPage() {
       }
     : null;
 
+  // Games underway right now, with everyone's picks on them, for the cards to show.
+  const live = await getLiveBoard(admin);
+
   const pickMap: Record<string, {
     id: string; bet_type: string; selection: string; line: number; odds: number | null;
     is_lotw: boolean; is_loty: boolean; overridden_by: string | null; overridden_at: string | null;
@@ -108,6 +112,7 @@ export default async function PicksPage() {
       marketLines={marketLines}
       lotyUsed={lotyUsed}
       memberId={user.id}
+      initialLive={live}
     />
   );
 }
