@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import {
   BET_TYPES,
   BET_TYPE_LABELS,
@@ -93,6 +93,69 @@ function parseOdds(text: string): { ok: boolean; value: number | null } {
   const n = Number(t);
   if (n > -100 && n < 100) return { ok: false, value: null };
   return { ok: true, value: n };
+}
+
+/**
+ * A number field whose sign is a pair of buttons beside it. iOS's decimal and numeric
+ * keypads have no minus key, so without this a phone cannot enter a favourite's spread
+ * or a negative price at all. The field itself keeps the keypad.
+ */
+function SignedInput({
+  label, value, onChange, placeholder, inputMode,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+  inputMode: "decimal" | "numeric";
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const digits = value.trim().replace(/^[+-]/, "");
+  const negative = value.trim().startsWith("-");
+  const positive = digits !== "" && !negative;
+
+  // The next digits belong after the sign, so the field takes focus with the caret at the
+  // end -- a tap on the field itself could land the caret in front of the sign instead.
+  const setSign = (sign: "-" | "+") => {
+    onChange(sign + digits);
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length));
+  };
+
+  return (
+    <div className="flex rounded-lg border border-slate-600 bg-slate-800 focus-within:border-sky-400 overflow-hidden">
+      {([["-", "−", negative], ["+", "+", positive]] as const).map(([sign, glyph, active]) => (
+        <button
+          key={sign}
+          type="button"
+          onClick={() => setSign(sign)}
+          // Keep focus (and the keyboard) on the field rather than moving it to the button.
+          onPointerDown={(e) => e.preventDefault()}
+          aria-pressed={active}
+          aria-label={sign === "-" ? "Minus" : "Plus"}
+          className={`w-8 text-sm font-bold border-r border-slate-600 transition-colors ${
+            active
+              ? "bg-sky-500/25 text-sky-100"
+              : "text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer"
+          }`}
+        >
+          {glyph}
+        </button>
+      ))}
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode={inputMode}
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full min-w-0 flex-1 px-2.5 py-1.5 bg-transparent text-sm text-white tabular-nums focus:outline-none"
+      />
+    </div>
+  );
 }
 
 /** A complete, valid wager, or null while the member is still composing one. */
@@ -572,31 +635,29 @@ function GameCard({
           {/* Line + price */}
           <div className="flex gap-2">
             {betType !== "ML" && (
-              <label className="flex-1">
+              <div className="flex-1 min-w-0">
                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-300 mb-1">
                   {betType === "TOTAL" ? "Total" : "Spread"}
                 </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={lineText}
-                  onChange={(e) => setLineText(e.target.value)}
-                  placeholder={betType === "TOTAL" ? "52.5" : "-3.5"}
-                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-600 bg-slate-800 text-sm text-white tabular-nums focus:border-sky-400 focus:outline-none"
-                />
-              </label>
+                {betType === "TOTAL" ? (
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label="Total"
+                    value={lineText}
+                    onChange={(e) => setLineText(e.target.value)}
+                    placeholder="52.5"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-600 bg-slate-800 text-sm text-white tabular-nums focus:border-sky-400 focus:outline-none"
+                  />
+                ) : (
+                  <SignedInput label="Spread" inputMode="decimal" value={lineText} onChange={setLineText} placeholder="3.5" />
+                )}
+              </div>
             )}
-            <label className="flex-1">
+            <div className="flex-1 min-w-0">
               <span className="block text-xs font-semibold uppercase tracking-wide text-slate-300 mb-1">Optional</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={oddsText}
-                onChange={(e) => setOddsText(e.target.value)}
-                placeholder="-110"
-                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-600 bg-slate-800 text-sm text-white tabular-nums focus:border-sky-400 focus:outline-none"
-              />
-            </label>
+              <SignedInput label="Price" inputMode="numeric" value={oddsText} onChange={setOddsText} placeholder="110" />
+            </div>
           </div>
 
           {/* Lock. Chosen alongside the wager so the LOTW goes in with the pick, not as a
