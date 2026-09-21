@@ -12,8 +12,22 @@ import {
   lockUpgradeError,
   type BetType,
   type LockLevel,
+  formatOdds,
   type Selection,
 } from "@/lib/wagers";
+import {
+  BOOK_LABELS,
+  DISPLAY_BOOKS,
+  favouredSide,
+  formatSpreadCell,
+  formatTotalCell,
+  spreadFill,
+  totalFill,
+  type BookSpread,
+  type GameMarket,
+  type MarketFill,
+  type MarketLines,
+} from "@/lib/odds/display";
 
 type Week = {
   id: number;
@@ -51,6 +65,8 @@ interface Props {
   week: Week;
   games: Game[];
   initialPickMap: Record<string, PickInfo>;
+  /** Current DK/FD lines by game id; a game with none posted is absent. */
+  marketLines: MarketLines;
   lotyUsed: LotyUsed;
   memberId: string;
 }
@@ -103,7 +119,7 @@ function buildDraft(
   return { bet_type: betType, selection, line, odds: odds.value };
 }
 
-export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
+export function PicksClient({ week, games, initialPickMap, marketLines, lotyUsed }: Props) {
   const [picks, setPicks] = useState(initialPickMap);
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -296,6 +312,7 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
               key={game.id}
               game={game}
               pick={pick}
+              market={marketLines[game.id]}
               kickedOff={isKickedOff(game)}
               busy={busy}
               error={errors[game.id] ?? errors[`lock-${game.id}`] ?? null}
@@ -312,10 +329,11 @@ export function PicksClient({ week, games, initialPickMap, lotyUsed }: Props) {
 }
 
 function GameCard({
-  game, pick, kickedOff, busy, error, weekLockOnAnotherPick, lotyUsedThisSeason, onSubmit, onLock,
+  game, pick, market, kickedOff, busy, error, weekLockOnAnotherPick, lotyUsedThisSeason, onSubmit, onLock,
 }: {
   game: Game;
   pick: PickInfo | null;
+  market: GameMarket | undefined;
   kickedOff: boolean;
   busy: string | null;
   error: string | null;
@@ -342,6 +360,14 @@ function GameCard({
     setBetType(next);
     if (selection && !SELECTIONS_FOR[next].includes(selection)) setSelection(null);
     if (next === "ML") setLineText("");
+  };
+
+  /** Take a book's number as the starting point; every field stays editable. */
+  const fillFromMarket = (fill: MarketFill) => {
+    setBetType(fill.bet_type);
+    setSelection(fill.selection);
+    setLineText(String(fill.line));
+    setOddsText(formatOdds(fill.odds) ?? "");
   };
 
   const draft = buildDraft(betType, selection, lineText, oddsText);
@@ -409,6 +435,14 @@ function GameCard({
           </span>
         )}
       </div>
+
+      {/* The market, in every state: while composing it is a tap target, afterwards a reference. */}
+      <MarketStrip
+        game={game}
+        market={market}
+        selection={selection}
+        onFill={!pick && !kickedOff ? fillFromMarket : undefined}
+      />
 
       {pick ? (
         // Submitted. The wager itself is settled; only its lock can still be raised.
@@ -673,5 +707,83 @@ function GameCard({
 
       {error && <p className="mt-2 text-xs font-medium text-red-400">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * DK and FD's current spread and total. The spread reads from the home team's side, said
+ * once in the header rather than on every row. With `onFill` each cell is a button that
+ * loads that book's number into the form; without it the strip is plain text.
+ */
+function MarketStrip({ game, market, selection, onFill }: {
+  game: Game;
+  market: GameMarket | undefined;
+  selection: Selection | null;
+  onFill?: (fill: MarketFill) => void;
+}) {
+  const books = DISPLAY_BOOKS.filter((b) => market?.[b]);
+  if (books.length === 0) {
+    return onFill ? <p className="text-xs text-slate-500 mb-3">No lines posted yet.</p> : null;
+  }
+
+  // A tapped spread goes to the side already chosen, else to the favourite; a tapped
+  // total to Under only when Under is already chosen.
+  const spreadSide = (spread: BookSpread) =>
+    selection === "HOME" || selection === "AWAY" ? selection : favouredSide(spread);
+  const totalSide = selection === "UNDER" ? "UNDER" : "OVER";
+
+  const cols = "grid grid-cols-[2rem_1fr_1fr] gap-x-2";
+
+  return (
+    <div className="rounded-lg border border-slate-700/70 bg-slate-800/40 px-2.5 py-1.5 mb-3 text-xs">
+      <div className={`${cols} text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-0.5`}>
+        <span>Book</span>
+        <span className="truncate">{game.home_team}</span>
+        <span>Total</span>
+      </div>
+      {DISPLAY_BOOKS.map((book) => {
+        const lines = market?.[book];
+        const spread = lines?.spread ?? null;
+        const total = lines?.total ?? null;
+        const updated = lines?.updated_at
+          ? `Updated ${new Date(lines.updated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+          : undefined;
+        return (
+          <div key={book} className={`${cols} items-center tabular-nums`}>
+            <span className="font-semibold text-slate-300" title={updated}>{BOOK_LABELS[book]}</span>
+            {spread ? (
+              <MarketCell
+                text={formatSpreadCell(spread)}
+                onClick={onFill && (() => onFill(spreadFill(spread, spreadSide(spread))))}
+              />
+            ) : (
+              <span className="text-slate-600">—</span>
+            )}
+            {total ? (
+              <MarketCell
+                text={formatTotalCell(total)}
+                onClick={onFill && (() => onFill(totalFill(total, totalSide)))}
+              />
+            ) : (
+              <span className="text-slate-600">—</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MarketCell({ text, onClick }: { text: string; onClick?: () => void }) {
+  if (!onClick) return <span className="text-slate-200">{text}</span>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Use this line"
+      className="text-left text-slate-200 hover:text-sky-300 cursor-pointer transition-colors"
+    >
+      {text}
+    </button>
   );
 }

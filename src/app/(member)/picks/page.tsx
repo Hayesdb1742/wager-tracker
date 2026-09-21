@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveSeasonId } from "@/lib/seasons";
 import { formatMatchup } from "@/lib/wagers";
+import { DISPLAY_BOOKS, shapeMarketLines } from "@/lib/odds/display";
 import { PicksClient } from "./PicksClient";
 import { redirect } from "next/navigation";
 
@@ -42,6 +43,17 @@ export default async function PicksPage() {
     .eq("week_id", week.id)
     .eq("in_pool", true)
     .order("kickoff_time", { ascending: true });
+
+  // The market right now, DK and FD only, so a member can see the line before naming one.
+  const gameIds = (games ?? []).map((g) => g.id);
+  const { data: lineRows } = gameIds.length > 0
+    ? await admin
+        .from("game_lines_latest")
+        .select("game_id, bookmaker, market, line, home_price, away_price, over_price, under_price, book_updated_at")
+        .in("game_id", gameIds)
+        .in("bookmaker", [...DISPLAY_BOOKS])
+    : { data: null };
+  const marketLines = shapeMarketLines(lineRows ?? []);
 
   // Load this member's existing picks for the week
   const { data: existingPicks } = await admin
@@ -93,6 +105,7 @@ export default async function PicksPage() {
       week={week}
       games={games ?? []}
       initialPickMap={pickMap}
+      marketLines={marketLines}
       lotyUsed={lotyUsed}
       memberId={user.id}
     />
