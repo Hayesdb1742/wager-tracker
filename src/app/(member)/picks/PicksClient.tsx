@@ -277,9 +277,31 @@ export function PicksClient({ week, games, initialPickMap, marketLines, lotyUsed
     { key: "NFL", label: "NFL", list: nflGames, required: week.required_nfl_picks },
     { key: "CFB", label: "CFB", list: cfbGames, required: week.required_cfb_picks },
   ];
-  const shown = sportTabs.find((t) => t.key === sport)?.list ?? [];
+  const shownAll = sportTabs.find((t) => t.key === sport)?.list ?? [];
+  // Live games lead, then the ones still to kick off; a finished game has nothing left to
+  // pick, so it sinks to the bottom. Each group keeps its kickoff order.
+  const live = shownAll.filter((g) => g.status === "LIVE");
+  const upcoming = shownAll.filter((g) => g.status !== "LIVE" && g.status !== "FINAL");
+  const shown = [...live, ...upcoming];
+  const finished = shownAll.filter((g) => g.status === "FINAL");
 
   const weekLockGame = weekLock ? games.find((g) => g.id === weekLock.gameId) : undefined;
+
+  const renderGame = (game: Game) => (
+    <GameCard
+      key={game.id}
+      game={game}
+      pick={picks[game.id] ?? null}
+      market={marketLines[game.id]}
+      kickedOff={isKickedOff(game)}
+      busy={busy}
+      error={errors[game.id] ?? errors[`lock-${game.id}`] ?? null}
+      weekLockOnAnotherPick={weekLock !== null && weekLock.gameId !== game.id}
+      lotyUsedThisSeason={lotySpent}
+      onSubmit={submitPick}
+      onLock={setLock}
+    />
+  );
 
   return (
     <div>
@@ -368,25 +390,20 @@ export function PicksClient({ week, games, initialPickMap, marketLines, lotyUsed
       </div>
 
       <div className="space-y-2">
-        {shown.map((game) => {
-          const pick = picks[game.id] ?? null;
-          return (
-            <GameCard
-              key={game.id}
-              game={game}
-              pick={pick}
-              market={marketLines[game.id]}
-              kickedOff={isKickedOff(game)}
-              busy={busy}
-              error={errors[game.id] ?? errors[`lock-${game.id}`] ?? null}
-              weekLockOnAnotherPick={weekLock !== null && weekLock.gameId !== game.id}
-              lotyUsedThisSeason={lotySpent}
-              onSubmit={submitPick}
-              onLock={setLock}
-            />
-          );
-        })}
+        {shown.map(renderGame)}
       </div>
+
+      {finished.length > 0 && (
+        <>
+          <div className="flex items-center gap-3 mt-6 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Final</span>
+            <div className="flex-1 h-px bg-slate-800" />
+          </div>
+          <div className="space-y-2">
+            {finished.map(renderGame)}
+          </div>
+        </>
+      )}
     </div>
   );
 }
