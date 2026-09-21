@@ -734,6 +734,13 @@ function MarketStrip({ game, market, selection, onFill }: {
 
   const cols = "grid grid-cols-[2rem_1fr_1fr] gap-x-2";
 
+  // The freshest of the books' own timestamps, shown once for the whole strip.
+  const updatedAt = books
+    .map((b) => market?.[b]?.updated_at ?? null)
+    .filter((t): t is string => t !== null)
+    .sort()
+    .at(-1);
+
   return (
     <div className="rounded-lg border border-slate-700/70 bg-slate-800/40 px-2.5 py-1.5 mb-3 text-xs">
       <div className={`${cols} text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-0.5`}>
@@ -745,12 +752,9 @@ function MarketStrip({ game, market, selection, onFill }: {
         const lines = market?.[book];
         const spread = lines?.spread ?? null;
         const total = lines?.total ?? null;
-        const updated = lines?.updated_at
-          ? `Updated ${new Date(lines.updated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
-          : undefined;
         return (
           <div key={book} className={`${cols} items-center tabular-nums`}>
-            <span className="font-semibold text-slate-300" title={updated}>{BOOK_LABELS[book]}</span>
+            <span className="font-semibold text-slate-300">{BOOK_LABELS[book]}</span>
             {spread ? (
               <MarketCell
                 text={formatSpreadCell(spread)}
@@ -770,8 +774,19 @@ function MarketStrip({ game, market, selection, onFill }: {
           </div>
         );
       })}
+      {updatedAt && (
+        <div className="text-right text-[10px] text-slate-500 mt-0.5">
+          Updated {formatUpdatedAt(updatedAt)}
+        </div>
+      )}
     </div>
   );
+}
+
+/** "Sat 9:41 AM" -- the day matters once a line is a few days old. */
+function formatUpdatedAt(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString([], { weekday: "short" })} ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function MarketCell({ text, onClick }: { text: string; onClick?: () => void }) {
