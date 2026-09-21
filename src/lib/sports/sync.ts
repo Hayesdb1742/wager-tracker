@@ -137,6 +137,17 @@ export async function syncResultsForWeek(
     }
   }
 
+  // A game can already be FINAL without its picks graded: schedule sync
+  // upserts upstream status and scores straight onto games, bypassing
+  // resolve_game. Grade those too rather than trusting status alone.
+  const { data: ungradedRows, error: ungradedError } = await admin
+    .from("picks")
+    .select("game_id")
+    .eq("week_id", weekId)
+    .is("points", null);
+  if (ungradedError) throw new Error(ungradedError.message);
+  const ungraded = new Set((ungradedRows ?? []).map((r) => r.game_id));
+
   const now = new Date().toISOString();
 
   for (const game of games) {
@@ -150,7 +161,7 @@ export async function syncResultsForWeek(
 
     try {
       if (up.status === "FINAL" && up.home_score !== null && up.away_score !== null) {
-        if (game.status !== "FINAL") {
+        if (game.status !== "FINAL" || ungraded.has(game.id)) {
           const { error: rpcError } = await admin.rpc("resolve_game", {
             p_game_id: game.id,
             p_home_score: up.home_score,
