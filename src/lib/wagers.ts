@@ -297,6 +297,22 @@ export function pickRecord(picks: readonly ScoredPick[]): LeagueRecord {
   return record;
 }
 
+/**
+ * Fold a week's forfeit penalty into a record as losses.
+ *
+ * A forfeited slot writes no pick row, so `pickRecord` cannot see it -- it only ever reads
+ * the picks a member actually made. But the league counts a slot left unpicked as a game
+ * lost, not merely a point docked, so the badge has to add it back from `weekly_scores`.
+ *
+ * `forfeit_penalty` is stored non-positive at -1 per unfilled slot, and a slot is one game
+ * on the same scale `pickRecord` counts in. The LOTW penalty is deliberately *not* folded
+ * in: that one is for failing to designate a lock, not for skipping a game.
+ */
+export function withForfeits(record: LeagueRecord, forfeitPenalty: number | null | undefined): LeagueRecord {
+  const forfeits = Math.abs(forfeitPenalty ?? 0);
+  return forfeits > 0 ? { ...record, losses: record.losses + forfeits } : record;
+}
+
 /** Decided games -- the denominator for a win rate. Pushes are not decided. */
 export function decidedGames(record: LeagueRecord): number {
   return record.wins + record.losses;

@@ -8,6 +8,7 @@ import {
   formatWager,
   formatMatchup,
   pickRecord,
+  withForfeits,
   lockRecord,
   formatRecord,
   winPct,
@@ -69,8 +70,12 @@ export default async function MemberStatsPage({
   const resolvedPicks = picks ?? [];
 
   // The headline record is counted in games, so a lost LOTW shows as two losses and a lost
-  // LOTY as seven -- the league reads the record, not the point total.
-  const record = pickRecord(resolvedPicks);
+  // LOTY as seven -- the league reads the record, not the point total. Forfeited slots never
+  // wrote a pick row, so they come off the weekly scores and land as losses, same as the
+  // leaderboard badge reads them. They count against the win rate too: a slot skipped is a
+  // game lost, and the card and the percentage have to be telling the same story.
+  const forfeitPenalty = (weeklyScores ?? []).reduce((sum, ws) => sum + (ws.forfeit_penalty ?? 0), 0);
+  const record = withForfeits(pickRecord(resolvedPicks), forfeitPenalty);
   const win_pct = winPct(record);
 
   // The lock record runs on its own scale -- LOTY at 3x a LOTW -- because a year-end prize
