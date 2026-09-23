@@ -7,6 +7,7 @@ import {
   wagerResult,
   lockLevel,
   pickRecord,
+  withForfeits,
   GRADE_LABELS,
   LOCK_SHORT,
   LOCK_MULTIPLIER,
@@ -142,14 +143,15 @@ export function LeaderboardClient({
     picks.filter((p) => p.member_id === memberId);
 
   // The week's record, counted in games rather than picks: the lock is worth two of them,
-  // the LOTY seven. Plus the lock this member spent, for the badge.
-  const resultCounts = (memberId: string) => {
+  // the LOTY seven. Forfeited slots have no pick row, so they come from the score row and
+  // count as losses. Plus the lock this member spent, for the badge.
+  const resultCounts = (memberId: string, forfeitPenalty: number) => {
     const mp = picksByMember(memberId);
     const lock = mp.reduce<LockLevel>((highest, p) => {
       const level = lockLevel(p);
       return LOCK_MULTIPLIER[level] > LOCK_MULTIPLIER[highest] ? level : highest;
     }, "NONE");
-    return { record: pickRecord(mp), lock };
+    return { record: withForfeits(pickRecord(mp), forfeitPenalty), lock };
   };
 
   const rankedScores = [...scores].sort(
@@ -209,7 +211,7 @@ export function LeaderboardClient({
           ) : (
             <div className="space-y-2">
               {rankedScores.map((member, idx) => {
-                const { record, lock } = resultCounts(member.member_id);
+                const { record, lock } = resultCounts(member.member_id, member.forfeit_penalty);
                 const isExpanded = expandedMember === member.member_id;
                 const memberPicks = picksByMember(member.member_id);
                 // Only the games this member actually bet on, and only once they've kicked
