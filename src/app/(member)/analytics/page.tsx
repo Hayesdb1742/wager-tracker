@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
-import { selectedTeam, opponentTeam, pickRecord, lockRecord, winPct } from "@/lib/wagers";
+import { selectedTeam, opponentTeam, pickRecord, withForfeits, lockRecord, winPct } from "@/lib/wagers";
 
 type AllTimeStat = {
   member_id: string;
@@ -58,7 +58,7 @@ export default async function AnalyticsPage() {
 
   const [profilesRes, scoresRes, picksRes, teamsRes] = await Promise.all([
     admin.from("profiles").select("id, display_name").eq("is_active", true),
-    admin.from("weekly_scores").select("member_id, total, week_id, weeks(season_id, status)"),
+    admin.from("weekly_scores").select("member_id, total, forfeit_penalty, week_id, weeks(season_id, status)"),
     admin.from("picks").select("member_id, bet_type, selection, line, is_lotw, is_loty, points, games(sport, home_team, away_team, winner, status)").not("points", "is", null),
     admin.from("teams").select("sport, name, conference, division"),
   ]);
@@ -89,6 +89,10 @@ export default async function AnalyticsPage() {
   }
 
   const seasonsByMember = new Map<string, Set<number>>();
+  // Forfeited slots write no pick row, so the record has to pick them up here. Kept in their
+  // own map rather than added to stat.losses on the spot: the picks loop below *assigns*
+  // wins/losses, so anything booked now would be overwritten.
+  const forfeitsByMember = new Map<string, number>();
   for (const s of scores) {
     const week = s.weeks;
     if (!week || week.status !== "CLOSED") continue;
@@ -96,6 +100,7 @@ export default async function AnalyticsPage() {
     if (!stat) continue;
     stat.all_time_total += s.total ?? 0;
     stat.weeks_played += 1;
+    forfeitsByMember.set(s.member_id, (forfeitsByMember.get(s.member_id) ?? 0) + (s.forfeit_penalty ?? 0));
     if (!seasonsByMember.has(s.member_id)) seasonsByMember.set(s.member_id, new Set());
     seasonsByMember.get(s.member_id)!.add(week.season_id);
   }
@@ -133,7 +138,13 @@ export default async function AnalyticsPage() {
     stat.lock_pushes = locks.pushes;
   }
 
+  // Fold the forfeits in over every member, not just the ones the picks loop touched -- a
+  // member who sat a whole week out has a penalty and no picks to hang it off.
   for (const stat of statsMap.values()) {
+    const { wins, losses, pushes } = withForfeits(stat, forfeitsByMember.get(stat.member_id));
+    stat.wins = wins;
+    stat.losses = losses;
+    stat.pushes = pushes;
     stat.win_pct = winPct(stat);
   }
 
