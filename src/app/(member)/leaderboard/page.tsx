@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveSeasonId } from "@/lib/seasons";
-import { pickRecord, withForfeits, type LeagueRecord } from "@/lib/wagers";
+import { pickRecord, lockRecord, withForfeits, type LeagueRecord } from "@/lib/wagers";
 import { LeaderboardClient } from "./LeaderboardClient";
 
 type SeasonPick = {
@@ -121,14 +121,21 @@ export default async function LeaderboardPage() {
   // gone inactive still shows while they have a record on the season.
   const seasonBase = profiles
     .filter((p) => p.is_active || settledPicksByMember.has(p.id) || forfeitsByMember.has(p.id))
-    .map((p) => ({
-      member_id: p.id,
-      display_name: p.display_name,
-      record: withForfeits(
-        pickRecord(settledPicksByMember.get(p.id) ?? []),
-        forfeitsByMember.get(p.id) ?? 0
-      ) satisfies LeagueRecord,
-    }));
+    .map((p) => {
+      const settled = settledPicksByMember.get(p.id) ?? [];
+      return {
+        member_id: p.id,
+        display_name: p.display_name,
+        record: withForfeits(
+          pickRecord(settled),
+          forfeitsByMember.get(p.id) ?? 0
+        ) satisfies LeagueRecord,
+        // The lock column runs on LOCK_PRIZE_WEIGHT, not the 2-and-7 the league record
+        // reads in -- a LOTY counts three there. Forfeits stay out of it: an unpicked slot
+        // is a game lost, never a lock spent.
+        locks: lockRecord(settled) satisfies LeagueRecord,
+      };
+    });
 
   return (
     <LeaderboardClient

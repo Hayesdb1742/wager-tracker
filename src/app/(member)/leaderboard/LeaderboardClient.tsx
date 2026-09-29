@@ -8,6 +8,7 @@ import {
   wagerResult,
   lockLevel,
   pickRecord,
+  lockRecord,
   withForfeits,
   addRecords,
   decidedGames,
@@ -56,6 +57,7 @@ type SeasonBaseEntry = {
   member_id: string;
   display_name: string;
   record: LeagueRecord;
+  locks: LeagueRecord;
 };
 
 interface Props {
@@ -68,8 +70,18 @@ interface Props {
   seasonBase: SeasonBaseEntry[];
 }
 
-/** Row width is shared by the header and every row, so the two can never drift apart. */
-const GRID_COLUMNS = "2rem minmax(0,1fr) 4.5rem 6.5rem 1rem";
+/**
+ * The row shape, shared by the header and every row so the two can never drift apart.
+ *
+ * Seven columns do not fit a phone -- the fixed tracks alone outrun a 390px screen and the
+ * card starts scrolling sideways. Win % is the one that goes: it is the only column a
+ * reader can recover from the one beside it. The narrow template therefore has six tracks
+ * and the win-rate cell carries `hidden sm:block` to match.
+ */
+const GRID_CLASS =
+  "grid items-center gap-2 sm:gap-3 " +
+  "grid-cols-[1.75rem_minmax(0,1fr)_3.75rem_4.5rem_3.25rem_0.75rem] " +
+  "sm:grid-cols-[2rem_minmax(0,1fr)_4.5rem_5rem_3.5rem_4rem_1rem]";
 
 export function LeaderboardClient({
   weeks,
@@ -186,11 +198,15 @@ export function LeaderboardClient({
     }
 
     return seasonBase
-      .map((entry) => ({
-        member_id: entry.member_id,
-        display_name: entry.display_name,
-        season: addRecords(entry.record, pickRecord(openPicksByMember.get(entry.member_id) ?? [])),
-      }))
+      .map((entry) => {
+        const open = openPicksByMember.get(entry.member_id) ?? [];
+        return {
+          member_id: entry.member_id,
+          display_name: entry.display_name,
+          season: addRecords(entry.record, pickRecord(open)),
+          locks: addRecords(entry.locks, lockRecord(open)),
+        };
+      })
       .sort((a, b) =>
         winPct(b.season) - winPct(a.season) ||
         b.season.wins - a.season.wins ||
@@ -234,16 +250,15 @@ export function LeaderboardClient({
       ) : (
         <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-lg shadow-black/30">
           {/* Table header */}
-          <div
-            className="grid items-center gap-3 text-xs font-bold text-slate-300 uppercase tracking-wide px-4 py-2.5 bg-slate-800 border-b border-slate-700"
-            style={{ gridTemplateColumns: GRID_COLUMNS }}
-          >
+          <div className={`${GRID_CLASS} text-xs font-bold text-slate-300 uppercase tracking-wide px-4 py-2.5 bg-slate-800 border-b border-slate-700`}>
             <div>#</div>
             <div>Member</div>
             <div className="text-center">
               {selectedWeek ? `Wk ${selectedWeek.week_number}` : "Week"}
             </div>
-            <div className="text-right">Season</div>
+            <div className="text-center">Season</div>
+            <div className="hidden sm:block text-center">Win %</div>
+            <div className="text-center">LOTW</div>
             <div />
           </div>
 
@@ -255,6 +270,9 @@ export function LeaderboardClient({
             );
             const weekPlayed = decidedGames(weekRecord) > 0 || weekRecord.pushes > 0;
             const seasonPlayed = decidedGames(row.season) > 0 || row.season.pushes > 0;
+            const seasonDecided = decidedGames(row.season) > 0;
+            const seasonPct = winPct(row.season);
+            const locksPlayed = decidedGames(row.locks) > 0 || row.locks.pushes > 0;
             const isExpanded = expandedMember === row.member_id;
             const memberPicks = picksByMember(row.member_id);
             // Only the games this member actually bet on, and only once they've kicked
@@ -274,12 +292,9 @@ export function LeaderboardClient({
                   className="w-full text-left transition-colors hover:bg-slate-800/70"
                   onClick={() => setExpandedMember(isExpanded ? null : row.member_id)}
                 >
-                  <div
-                    className="grid items-center gap-3 px-4 py-3"
-                    style={{ gridTemplateColumns: GRID_COLUMNS }}
-                  >
+                  <div className={`${GRID_CLASS} px-4 py-3`}>
                     {/* Rank */}
-                    <div className={`w-7 h-7 -ml-0.5 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                    <div className={`w-7 h-7 -ml-0.5 sm:ml-0 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
                       idx === 0 ? "bg-amber-400 text-slate-950 shadow-md shadow-amber-500/30" :
                       idx === 1 ? "bg-slate-300 text-slate-900" :
                       idx === 2 ? "bg-amber-700 text-amber-50" :
@@ -313,17 +328,30 @@ export function LeaderboardClient({
                     </div>
 
                     {/* Season record */}
-                    <div className="text-right">
-                      <div className={`text-base font-bold tabular-nums ${
-                        seasonPlayed ? "text-white" : "text-slate-600"
-                      }`}>
-                        {seasonPlayed ? formatRecord(row.season) : "–"}
-                      </div>
-                      {decidedGames(row.season) > 0 && (
-                        <div className="text-xs font-medium text-slate-400 tabular-nums">
-                          {winPct(row.season)}%
-                        </div>
-                      )}
+                    <div className={`text-center text-base font-bold tabular-nums ${
+                      seasonPlayed ? "text-white" : "text-slate-600"
+                    }`}>
+                      {seasonPlayed ? formatRecord(row.season) : "–"}
+                    </div>
+
+                    {/* Season win rate, over decided games */}
+                    <div className={`hidden sm:block text-center text-sm font-medium tabular-nums ${
+                      !seasonDecided ? "text-slate-600" :
+                      seasonPct >= 60 ? "text-emerald-400" :
+                      seasonPct >= 50 ? "text-slate-100" :
+                      "text-red-400"
+                    }`}>
+                      {seasonDecided ? `${seasonPct}%` : "–"}
+                    </div>
+
+                    {/* Lock record, on the prize scale: a LOTW counts one, a LOTY three. */}
+                    <div className={`text-center text-sm font-semibold tabular-nums ${
+                      !locksPlayed ? "text-slate-600" :
+                      row.locks.wins > row.locks.losses ? "text-amber-300" :
+                      row.locks.wins < row.locks.losses ? "text-red-400" :
+                      "text-slate-300"
+                    }`}>
+                      {locksPlayed ? formatRecord(row.locks) : "–"}
                     </div>
 
                     <div className="text-slate-500 text-xs text-right">{isExpanded ? "▲" : "▼"}</div>
