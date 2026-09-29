@@ -19,9 +19,8 @@ export async function GET(
   const [scoresRes, gamesRes, picksRes] = await Promise.all([
     admin
       .from("weekly_scores")
-      .select("member_id, pick_points, forfeit_penalty, lotw_penalty, total, profiles(display_name)")
-      .eq("week_id", weekId)
-      .order("total", { ascending: false }),
+      .select("member_id, forfeit_penalty, lotw_penalty, profiles(display_name)")
+      .eq("week_id", weekId),
     admin
       .from("games")
       .select("id, sport, home_team, away_team, kickoff_time, status, winner, home_score, away_score")
@@ -38,10 +37,8 @@ export async function GET(
     scores: (scoresRes.data ?? []).map((s) => ({
       member_id: s.member_id,
       display_name: s.profiles?.display_name ?? "Unknown",
-      pick_points: s.pick_points,
       forfeit_penalty: s.forfeit_penalty,
       lotw_penalty: s.lotw_penalty,
-      total: s.total,
     })),
     games: gamesRes.data ?? [],
     picks: picksRes.data ?? [],
