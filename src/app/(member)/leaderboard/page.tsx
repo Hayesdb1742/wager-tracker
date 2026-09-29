@@ -1,6 +1,15 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveSeasonId } from "@/lib/seasons";
+import { pickRecord, withForfeits, type LeagueRecord } from "@/lib/wagers";
 import { LeaderboardClient } from "./LeaderboardClient";
+
+type SeasonPick = {
+  member_id: string;
+  week_id: number;
+  is_lotw: boolean | null;
+  is_loty: boolean | null;
+  points: number | null;
+};
 
 export default async function LeaderboardPage() {
   const admin = createAdminClient();
@@ -24,9 +33,8 @@ export default async function LeaderboardPage() {
   const { data: scores } = defaultWeek
     ? await admin
         .from("weekly_scores")
-        .select("member_id, pick_points, forfeit_penalty, lotw_penalty, total, profiles(display_name)")
+        .select("member_id, forfeit_penalty, lotw_penalty, profiles(display_name)")
         .eq("week_id", defaultWeek.id)
-        .order("total", { ascending: false })
     : { data: [] };
 
   // Games for the default week
@@ -47,32 +55,80 @@ export default async function LeaderboardPage() {
         .eq("week_id", defaultWeek.id)
     : { data: [] };
 
-  // Season standings: sum totals across all CLOSED weeks
-  const closedWeekIds = (weeks ?? []).filter((w) => w.status === "CLOSED").map((w) => w.id);
-  const { data: allClosedScores } = closedWeekIds.length > 0
-    ? await admin
-        .from("weekly_scores")
-        .select("member_id, week_id, total, profiles(display_name)")
-        .in("week_id", closedWeekIds)
-    : { data: [] };
+  // Season record: every graded pick of the season, plus the forfeited slots that wrote no
+  // pick row. The open week is deliberately left out of the base — the client folds it back
+  // in from the week data it already holds, so a game resolving mid-week moves the season
+  // column live, the same way it moves the week column.
+  const weekIds = (weeks ?? []).map((w) => w.id);
 
-  // Aggregate season standings
-  type SeasonEntry = { member_id: string; display_name: string; season_total: number; weeks: Record<number, number> };
-  const seasonMap = new Map<string, SeasonEntry>();
-
-  for (const row of allClosedScores ?? []) {
-    const name = row.profiles?.display_name ?? "Unknown";
-    if (!seasonMap.has(row.member_id)) {
-      seasonMap.set(row.member_id, { member_id: row.member_id, display_name: name, season_total: 0, weeks: {} });
+  // Paged, because a full season outruns PostgREST's 1000-row ceiling: nine members times
+  // ten picks times eighteen weeks is past it by midseason, and the cap truncates silently
+  // -- the standings would simply start losing games off the back of the year.
+  async function allSeasonPicks() {
+    if (weekIds.length === 0) return [];
+    const page = 1000;
+    const rows: SeasonPick[] = [];
+    for (let from = 0; ; from += page) {
+      const { data } = await admin
+        .from("picks")
+        .select("member_id, week_id, is_lotw, is_loty, points")
+        .in("week_id", weekIds)
+        .not("points", "is", null)
+        .order("member_id", { ascending: true })
+        .range(from, from + page - 1);
+      if (!data || data.length === 0) break;
+      rows.push(...data);
+      if (data.length < page) break;
     }
-    const entry = seasonMap.get(row.member_id)!;
-    entry.season_total += row.total ?? 0;
-    entry.weeks[row.week_id] = row.total ?? 0;
+    return rows;
   }
 
-  const seasonStandings = Array.from(seasonMap.values()).sort((a, b) =>
-    b.season_total - a.season_total || a.display_name.localeCompare(b.display_name)
-  );
+  const [seasonPicks, seasonScoresRes, profilesRes] = await Promise.all([
+    allSeasonPicks(),
+    weekIds.length > 0
+      ? admin
+          .from("weekly_scores")
+          .select("member_id, forfeit_penalty")
+          .in("week_id", weekIds)
+      : Promise.resolve({ data: [] }),
+    admin.from("profiles").select("id, display_name, is_active"),
+  ]);
+
+  const seasonScores = seasonScoresRes.data ?? [];
+  const profiles = profilesRes.data ?? [];
+
+  // Group the settled weeks' picks by member, then tally. close_week is what writes
+  // forfeit_penalty, so the open week's is always 0 — summing every week double-counts
+  // nothing.
+  const settledPicksByMember = new Map<string, SeasonPick[]>();
+  for (const pick of seasonPicks) {
+    if (openWeek && pick.week_id === openWeek.id) continue;
+    const list = settledPicksByMember.get(pick.member_id);
+    if (list) list.push(pick);
+    else settledPicksByMember.set(pick.member_id, [pick]);
+  }
+
+  const forfeitsByMember = new Map<string, number>();
+  for (const score of seasonScores) {
+    forfeitsByMember.set(
+      score.member_id,
+      (forfeitsByMember.get(score.member_id) ?? 0) + (score.forfeit_penalty ?? 0)
+    );
+  }
+
+  // Everyone active gets a row even before their first pick grades, so the board is the
+  // league roster rather than "whoever the scoring job has touched". A member who has since
+  // gone inactive still shows while they have a record on the season.
+  const seasonBase = profiles
+    .filter((p) => p.is_active || settledPicksByMember.has(p.id) || forfeitsByMember.has(p.id))
+    .map((p) => ({
+      member_id: p.id,
+      display_name: p.display_name,
+      record: withForfeits(
+        pickRecord(settledPicksByMember.get(p.id) ?? []),
+        forfeitsByMember.get(p.id) ?? 0
+      ) satisfies LeagueRecord,
+    }));
 
   return (
     <LeaderboardClient
@@ -82,10 +138,8 @@ export default async function LeaderboardPage() {
       initialScores={(scores ?? []).map((s) => ({
         member_id: s.member_id,
         display_name: s.profiles?.display_name ?? "Unknown",
-        pick_points: s.pick_points,
         forfeit_penalty: s.forfeit_penalty,
         lotw_penalty: s.lotw_penalty,
-        total: s.total ?? 0,
       }))}
       initialGames={games ?? []}
       initialPicks={(picks ?? []).map((p) => ({
@@ -99,8 +153,7 @@ export default async function LeaderboardPage() {
         is_loty: p.is_loty,
         points: p.points,
       }))}
-      seasonStandings={seasonStandings}
-      closedWeekIds={closedWeekIds}
+      seasonBase={seasonBase}
     />
   );
 }

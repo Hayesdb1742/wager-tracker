@@ -363,3 +363,16 @@ export function lockRecord(picks: readonly ScoredPick[]): LeagueRecord {
 
   return record;
 }
+
+/**
+ * Sum two records. Used where a record is assembled from parts the page fetches
+ * separately -- the leaderboard's season column is the settled weeks plus the week still in
+ * play, and the live half is refetched on its own as games resolve.
+ */
+export function addRecords(a: LeagueRecord, b: LeagueRecord): LeagueRecord {
+  return {
+    wins: a.wins + b.wins,
+    losses: a.losses + b.losses,
+    pushes: a.pushes + b.pushes,
+  };
+}
