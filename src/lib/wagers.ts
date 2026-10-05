@@ -265,8 +265,9 @@ export function lockUpgradeError(
  * is one, a LOTW two, a LOTY seven. Two wins and three losses with the LOTW among the
  * losses is 2-4; with the LOTY among them, 2-9.
  *
- * A push is a no-action, so it stays one row however it was locked -- there is nothing to
- * double when nothing was won or lost.
+ * A push carries the same weight: a pushed LOTW is two games pushed, a pushed LOTY seven.
+ * The lock spent the slots either way, and a week's W-L-P should always add up to the
+ * games it was played in.
  */
 export type LeagueRecord = { wins: number; losses: number; pushes: number };
 
@@ -291,7 +292,7 @@ export function pickRecord(picks: readonly ScoredPick[]): LeagueRecord {
     const games = LOCK_MULTIPLIER[lockLevel(pick)];
     if (pick.points > 0) record.wins += games;
     else if (pick.points < 0) record.losses += games;
-    else record.pushes += 1;
+    else record.pushes += games;
   }
 
   return record;
@@ -343,7 +344,7 @@ export function formatRecord(record: LeagueRecord): string {
 export const LOCK_PRIZE_WEIGHT: Record<LockLevel, number> = { NONE: 0, LOTW: 1, LOTY: 3 };
 
 /**
- * Tally only the picks that carried a lock, on the prize scale above. Unlike `pickRecord`,
+ * Tally only the picks that carried a lock, on the prize scale above. As in `pickRecord`,
  * a push is weighted too, so all three numbers stay on one scale.
  *
  * Shared so the all-time standings column and the member's own Locks card cannot disagree
