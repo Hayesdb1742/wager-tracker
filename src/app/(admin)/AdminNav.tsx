@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/pick-grid", label: "Pick Grid" },
   { href: "/results", label: "Results" },
   { href: "/members", label: "Members" },
+  { href: "/line-flags", label: "Line Flags" },
 ];
 
 export function AdminNav() {
