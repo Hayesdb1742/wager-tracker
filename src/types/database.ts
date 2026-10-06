@@ -316,6 +316,161 @@ export type Database = {
           },
         ]
       }
+      pick_line_flags: {
+        Row: {
+          bet_type: string
+          books_seen: string[]
+          deviation: number
+          first_flagged_at: string
+          game_id: string
+          last_checked_at: string
+          market_best_line: number
+          market_rows: number
+          market_worst_line: number
+          member_id: string
+          notified_at: string | null
+          pick_id: string
+          pick_line: number
+          pick_odds: number | null
+          placed_at: string
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          selection: string
+          status: string
+          tolerance: number
+          verdict: string
+          week_id: number
+        }
+        Insert: {
+          bet_type: string
+          books_seen: string[]
+          deviation: number
+          first_flagged_at?: string
+          game_id: string
+          last_checked_at?: string
+          market_best_line: number
+          market_rows: number
+          market_worst_line: number
+          member_id: string
+          notified_at?: string | null
+          pick_id: string
+          pick_line: number
+          pick_odds?: number | null
+          placed_at: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          selection: string
+          status?: string
+          tolerance: number
+          verdict: string
+          week_id: number
+        }
+        Update: {
+          bet_type?: string
+          books_seen?: string[]
+          deviation?: number
+          first_flagged_at?: string
+          game_id?: string
+          last_checked_at?: string
+          market_best_line?: number
+          market_rows?: number
+          market_worst_line?: number
+          member_id?: string
+          notified_at?: string | null
+          pick_id?: string
+          pick_line?: number
+          pick_odds?: number | null
+          placed_at?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          selection?: string
+          status?: string
+          tolerance?: number
+          verdict?: string
+          week_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pick_line_flags_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pick_line_flags_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pick_line_flags_pick_id_fkey"
+            columns: ["pick_id"]
+            isOneToOne: true
+            referencedRelation: "picks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pick_line_flags_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pick_line_flags_week_id_fkey"
+            columns: ["week_id"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          last_error: string | null
+          last_sent_at: string | null
+          member_id: string
+          p256dh: string
+          user_agent: string | null
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          last_error?: string | null
+          last_sent_at?: string | null
+          member_id: string
+          p256dh: string
+          user_agent?: string | null
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          last_error?: string | null
+          last_sent_at?: string | null
+          member_id?: string
+          p256dh?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       picks: {
         Row: {
           bet_type: string
@@ -601,11 +756,71 @@ export type Database = {
           },
         ]
       }
+      pick_line_flags_detail: {
+        Row: {
+          bet_type: string | null
+          books_seen: string[] | null
+          deviation: number | null
+          first_flagged_at: string | null
+          is_lotw: boolean | null
+          is_loty: boolean | null
+          kickoff_time: string | null
+          last_checked_at: string | null
+          market_best_line: number | null
+          market_rows: number | null
+          market_worst_line: number | null
+          matchup: string | null
+          member: string | null
+          notified_at: string | null
+          overridden_at: string | null
+          overridden_by: string | null
+          pick_id: string | null
+          pick_line: number | null
+          pick_odds: number | null
+          placed_at: string | null
+          points: number | null
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          selection: string | null
+          sport: string | null
+          status: string | null
+          tolerance: number | null
+          verdict: string | null
+          week_number: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pick_line_flags_pick_id_fkey"
+            columns: ["pick_id"]
+            isOneToOne: true
+            referencedRelation: "picks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       advance_season: { Args: Record<PropertyKey, never>; Returns: Json }
+      assess_pick_line: {
+        Args: { p_pick_id: string; p_tolerance?: number }
+        Returns: {
+          books_seen: string[]
+          deviation: number
+          market_best_line: number
+          market_last_seen: string
+          market_rows: number
+          market_worst_line: number
+          pick_line: number
+          verdict: string
+        }[]
+      }
       close_week: { Args: { p_week_id: number }; Returns: undefined }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      flag_pick_line: {
+        Args: { p_pick_id: string; p_tolerance?: number }
+        Returns: string
+      }
       grade_pick: {
         Args: {
           p_away_score: number
@@ -616,10 +831,23 @@ export type Database = {
         }
         Returns: string
       }
+      line_provider_books: { Args: Record<PropertyKey, never>; Returns: string[] }
+      recheck_pick_line_flags: {
+        Args: { p_tolerance?: number; p_week_id?: number }
+        Returns: {
+          flags_open: number
+          picks_checked: number
+        }[]
+      }
+      request_line_flag_push: { Args: { p_pick_ids: string[] }; Returns: number }
       request_odds_sync: { Args: { p_sports: string[] }; Returns: number }
       request_results_sync: { Args: Record<PropertyKey, never>; Returns: number }
       resolve_game: {
         Args: { p_away_score: number; p_game_id: string; p_home_score: number }
+        Returns: undefined
+      }
+      review_pick_line_flag: {
+        Args: { p_note?: string; p_pick_id: string; p_status: string }
         Returns: undefined
       }
     }
