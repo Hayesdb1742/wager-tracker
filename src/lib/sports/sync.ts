@@ -70,6 +70,7 @@ export interface ResultsSyncSummary {
   resolved: number;
   skipped_manual: number;
   status_changed: number;
+  kickoffs_updated: number;
   touched: number;
   errors: string[];
 }
@@ -96,6 +97,7 @@ export async function syncResultsForWeek(
     resolved: 0,
     skipped_manual: 0,
     status_changed: 0,
+    kickoffs_updated: 0,
     touched: 0,
     errors: [],
   };
@@ -195,11 +197,22 @@ export async function syncResultsForWeek(
         if (updateError) throw new Error(updateError.message);
         summary.status_changed++;
       } else {
+        // Kickoffs are seeded weeks ahead, when most CFB times are still TBD
+        // (cfbd reports those as midnight ET). Picks lock at kickoff_time, so
+        // follow upstream once the networks set the real time.
+        const kickoffChanged =
+          up.kickoff_time !== "" &&
+          new Date(up.kickoff_time).getTime() !== new Date(game.kickoff_time).getTime();
         const { error: updateError } = await admin
           .from("games")
-          .update({ last_synced_at: now })
+          .update(
+            kickoffChanged
+              ? { kickoff_time: up.kickoff_time, last_synced_at: now }
+              : { last_synced_at: now }
+          )
           .eq("id", game.id);
         if (updateError) throw new Error(updateError.message);
+        if (kickoffChanged) summary.kickoffs_updated++;
       }
       summary.touched++;
     } catch (err) {
