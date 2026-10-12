@@ -208,7 +208,7 @@ export function LeaderboardClient({
         };
       })
       .sort((a, b) =>
-        winPct(b.season) - winPct(a.season) ||
+        winPct(b.season, 1) - winPct(a.season, 1) ||
         b.season.wins - a.season.wins ||
         a.display_name.localeCompare(b.display_name)
       );
@@ -271,7 +271,7 @@ export function LeaderboardClient({
             const weekPlayed = decidedGames(weekRecord) > 0 || weekRecord.pushes > 0;
             const seasonPlayed = decidedGames(row.season) > 0 || row.season.pushes > 0;
             const seasonDecided = decidedGames(row.season) > 0;
-            const seasonPct = winPct(row.season);
+            const seasonPct = winPct(row.season, 1);
             const locksPlayed = decidedGames(row.locks) > 0 || row.locks.pushes > 0;
             const isExpanded = expandedMember === row.member_id;
             const memberPicks = picksByMember(row.member_id);
@@ -341,7 +341,7 @@ export function LeaderboardClient({
                       seasonPct >= 50 ? "text-slate-100" :
                       "text-red-400"
                     }`}>
-                      {seasonDecided ? `${seasonPct}%` : "–"}
+                      {seasonDecided ? `${seasonPct.toFixed(1)}%` : "–"}
                     </div>
 
                     {/* Lock record, on the prize scale: a LOTW counts one, a LOTY three. */}
