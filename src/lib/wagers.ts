@@ -319,10 +319,15 @@ export function decidedGames(record: LeagueRecord): number {
   return record.wins + record.losses;
 }
 
-/** Win rate over decided games, as a whole percent. 0 when nothing is decided. */
-export function winPct(record: LeagueRecord): number {
+/**
+ * Win rate over decided games, as a percent rounded to `decimals` places (whole
+ * percent by default). 0 when nothing is decided.
+ */
+export function winPct(record: LeagueRecord, decimals = 0): number {
   const decided = decidedGames(record);
-  return decided > 0 ? Math.round((record.wins / decided) * 100) : 0;
+  if (decided === 0) return 0;
+  const scale = 10 ** decimals;
+  return Math.round((record.wins / decided) * 100 * scale) / scale;
 }
 
 /** "2–4", or "2–4–1" when there are pushes to show. */
